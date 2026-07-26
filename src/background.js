@@ -14,6 +14,18 @@ function historyKey(tabId) {
   return `conversation_${tabId}`;
 }
 
+// Detect a "fill this form" request so we can route to the KB voice form-filler
+// (kb.js) instead of the normal Q&A flow. Kept heuristic + lightly multilingual.
+function isFillFormIntent(transcript) {
+  const t = (transcript || "").toLowerCase();
+  if (/\bautofill\b/.test(t)) return true;
+  if (/\bfill\b/.test(t) && /\bform\b/.test(t)) return true;
+  if (/fill (it|this|the)\s+(up|out|form)\b/.test(t)) return true;
+  if (/form\s*(bhar|bharo|bhardo|bharna)/.test(t)) return true;
+  if (/\bbhar\s*do\b/.test(t) && /form/.test(t)) return true;
+  return false;
+}
+
 async function loadHistory(tabId, pageText) {
   const stored = await chrome.storage.local.get(historyKey(tabId));
   const entry = stored[historyKey(tabId)];
@@ -153,6 +165,19 @@ async function handleVoiceQuery(port, message) {
       transcript
     });
 
+    // Fill-form voice command -> hand off to the KB form-filler (kb.js) in the tab
+    // and speak a short confirmation. Skip the normal Q&A path.
+    if (isFillFormIntent(transcript)) {
+      const confirmText = "Okay, let's fill this form.";
+      if (tabId != null) {
+        chrome.tabs.sendMessage(tabId, { type: "SAARTHIX_FILL_FORM", languageCode });
+      }
+      safePost(port, { type: "meta", transcript, languageCode, answerText: confirmText, toolResults: [] });
+      await streamSpeech(port, confirmText, languageCode);
+      safePost(port, { type: "done" });
+      return;
+    }
+
     const { enrichedText, toolResults } = await enrichPageContext(tabId, transcript, pageText, history);
     const answerText = await getAnswer(enrichedText, transcript, languageCode, history);
 
@@ -177,4 +202,34 @@ chrome.runtime.onConnect.addListener((port) => {
   port.onMessage.addListener((message) => {
     if (message?.type === "VOICE_QUERY") handleVoiceQuery(port, message);
   });
+});
+
+// Voice I/O helpers for the KB form-filler (kb.js). kb.js records the mic and plays
+// audio; the actual Sarvam TTS/STT calls run here because they hold the API key.
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === "KB_SPEAK") {
+    (async () => {
+      try {
+        const audioBase64 = await synthesizeSpeech(message.text, message.languageCode);
+        sendResponse({ ok: true, audioBase64 });
+      } catch (err) {
+        console.error("SaarthiX KB_SPEAK error:", err);
+        sendResponse({ ok: false, error: err.message });
+      }
+    })();
+    return true;
+  }
+
+  if (message.type === "KB_TRANSCRIBE") {
+    (async () => {
+      try {
+        const { transcript, languageCode } = await transcribeAudio(message.audioBase64);
+        sendResponse({ ok: true, transcript, languageCode });
+      } catch (err) {
+        console.error("SaarthiX KB_TRANSCRIBE error:", err);
+        sendResponse({ ok: false, error: err.message });
+      }
+    })();
+    return true;
+  }
 });
