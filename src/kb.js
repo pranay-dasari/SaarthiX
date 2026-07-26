@@ -421,7 +421,25 @@
     });
   }
 
+  // Push a caption line to the shared subtitle bar (captions.js), translated into
+  // the conversation's native language via the background worker. Best-effort:
+  // captions are cosmetic, so a missing module, translation failure, or DOM error
+  // must never break the form-fill flow.
+  async function showCaption(who, text, languageCode) {
+    try {
+      if (typeof window === "undefined" || !window.SaarthiCaptions || !text) return;
+      var display = text;
+      if (languageCode && String(languageCode).toLowerCase().indexOf("en") !== 0) {
+        var res = await sendMessage({ type: "KB_TRANSLATE", text: text, languageCode: languageCode });
+        if (res && res.ok && res.text) display = res.text;
+      }
+      if (who === "user") window.SaarthiCaptions.showUser(display, languageCode);
+      else window.SaarthiCaptions.showAgent(display, languageCode);
+    } catch (e) { /* ignore */ }
+  }
+
   async function speak(text, languageCode) {
+    showCaption("agent", text, languageCode);
     var res = await sendMessage({ type: "KB_SPEAK", text: text, languageCode: languageCode });
     if (res && res.ok && res.audioBase64) {
       try { await playAudio(res.audioBase64); } catch (e) { console.warn("SaarthiX KB: play failed", e); }
@@ -450,7 +468,10 @@
   async function listen() {
     var audioBase64 = await recordAudio(RECORD_MS);
     var res = await sendMessage({ type: "KB_TRANSCRIBE", audioBase64: audioBase64 });
-    if (res && res.ok) return { transcript: res.transcript || "", languageCode: res.languageCode };
+    if (res && res.ok) {
+      showCaption("user", res.transcript || "", res.languageCode);
+      return { transcript: res.transcript || "", languageCode: res.languageCode };
+    }
     console.warn("SaarthiX KB: STT failed", res && res.error);
     return { transcript: "" };
   }

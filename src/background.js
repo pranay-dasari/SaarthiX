@@ -5,6 +5,7 @@
 import { transcribeAudio } from "./stt.js";
 import { choosePageTool, getAnswer } from "./brain.js";
 import { synthesizeSpeech, chunkTextForSpeech } from "./tts.js";
+import { translateForCaption } from "./translate.js";
 
 const MAX_STORED_HISTORY_TURNS = 10;
 const MAX_TOOL_CALLS = 2;
@@ -165,23 +166,31 @@ async function handleVoiceQuery(port, message) {
       transcript
     });
 
+    // STT returns the user's speech translated to English; translate it back into
+    // the detected language so the on-screen caption is in the conversation's
+    // native script. Runs in parallel with the answer so it's off the critical path.
+    const captionPromise = translateForCaption(transcript, languageCode);
+
     // Fill-form voice command -> hand off to the KB form-filler (kb.js) in the tab
     // and speak a short confirmation. Skip the normal Q&A path.
     if (isFillFormIntent(transcript)) {
       const confirmText = "Okay, let's fill this form.";
+      const confirmNative = await translateForCaption(confirmText, languageCode);
       if (tabId != null) {
         chrome.tabs.sendMessage(tabId, { type: "SAARTHIX_FILL_FORM", languageCode });
       }
-      safePost(port, { type: "meta", transcript, languageCode, answerText: confirmText, toolResults: [] });
-      await streamSpeech(port, confirmText, languageCode);
+      const captionTranscript = await captionPromise;
+      safePost(port, { type: "meta", transcript, captionTranscript, languageCode, answerText: confirmNative, toolResults: [] });
+      await streamSpeech(port, confirmNative, languageCode);
       safePost(port, { type: "done" });
       return;
     }
 
     const { enrichedText, toolResults } = await enrichPageContext(tabId, transcript, pageText, history);
     const answerText = await getAnswer(enrichedText, transcript, languageCode, history);
+    const captionTranscript = await captionPromise;
 
-    safePost(port, { type: "meta", transcript, languageCode, answerText, toolResults });
+    safePost(port, { type: "meta", transcript, captionTranscript, languageCode, answerText, toolResults });
 
     await streamSpeech(port, answerText, languageCode);
 
@@ -228,6 +237,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       } catch (err) {
         console.error("SaarthiX KB_TRANSCRIBE error:", err);
         sendResponse({ ok: false, error: err.message });
+      }
+    })();
+    return true;
+  }
+
+  // Translate caption text into the conversation's native language for kb.js.
+  if (message.type === "KB_TRANSLATE") {
+    (async () => {
+      try {
+        const text = await translateForCaption(message.text, message.languageCode, message.sourceLanguageCode);
+        sendResponse({ ok: true, text });
+      } catch (err) {
+        console.error("SaarthiX KB_TRANSLATE error:", err);
+        sendResponse({ ok: false, error: err.message, text: message.text });
       }
     })();
     return true;

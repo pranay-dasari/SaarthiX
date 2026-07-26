@@ -422,6 +422,13 @@ function processUtterance(blob) {
               console.log("SaarthiX: transcript", msg.transcript);
               console.log("SaarthiX: tool results", msg.toolResults || []);
               console.log("SaarthiX: answer", msg.answerText);
+              if (window.SaarthiCaptions) {
+                // captionTranscript is the user's speech translated into the spoken
+                // language's native script; fall back to the raw transcript.
+                const userCaption = msg.captionTranscript || msg.transcript;
+                if (userCaption) window.SaarthiCaptions.showUser(userCaption, msg.languageCode);
+                if (msg.answerText) window.SaarthiCaptions.showAgent(msg.answerText, msg.languageCode);
+              }
               break;
             case "audio-chunk":
               if (!msg.base64) break;
@@ -522,6 +529,7 @@ function stopSession() {
   session.analyser = null;
   session.recorder = null;
   setSessionState("idle");
+  if (window.SaarthiCaptions) window.SaarthiCaptions.hide();
 }
 
 console.log("SaarthiX: content script loaded", { url: window.location.href });
