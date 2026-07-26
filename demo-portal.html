@@ -1,0 +1,762 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Farmer Support Registration Portal</title>
+  <style>
+    /* ------------------------------------------------------------------ */
+    /* Base                                                                */
+    /* ------------------------------------------------------------------ */
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: Arial, "Segoe UI", sans-serif;
+      background: #eef1f4;
+      color: #222;
+      font-size: 15px;
+      line-height: 1.5;
+    }
+
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 0 12px;
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Header                                                              */
+    /* ------------------------------------------------------------------ */
+    .topbar {
+      background: #1a3f6b;
+      color: #fff;
+      font-size: 12px;
+      padding: 4px 0;
+    }
+    .topbar .container {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    header.main-header {
+      background: #fff;
+      border-bottom: 4px solid #2e7d32;
+      padding: 14px 0;
+    }
+    header.main-header .container {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+
+    .emblem {
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      background: #1a3f6b;
+      color: #ffcc33;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 26px;
+      flex-shrink: 0;
+      border: 2px solid #ffcc33;
+    }
+
+    .header-titles { flex: 1 1 300px; }
+    .header-titles h1 {
+      font-size: 21px;
+      color: #1a3f6b;
+    }
+    .header-titles p {
+      font-size: 13px;
+      color: #555;
+    }
+
+    .lang-select label {
+      font-size: 12px;
+      color: #555;
+      display: block;
+    }
+    .lang-select select {
+      padding: 4px 6px;
+      font-size: 13px;
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Notice                                                              */
+    /* ------------------------------------------------------------------ */
+    .notice {
+      background: #fff8e1;
+      border: 1px solid #e0c36a;
+      border-left: 5px solid #c9a227;
+      padding: 10px 14px;
+      margin: 18px 0;
+      font-size: 14px;
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Form card                                                           */
+    /* ------------------------------------------------------------------ */
+    .card {
+      background: #fff;
+      border: 1px solid #c9d2dc;
+      margin-bottom: 24px;
+    }
+    .card-title {
+      background: #1a3f6b;
+      color: #fff;
+      padding: 10px 16px;
+      font-size: 17px;
+      font-weight: bold;
+    }
+
+    fieldset {
+      border: 1px solid #d7dee6;
+      margin: 16px;
+      padding: 12px 16px 16px;
+      background: #fafbfc;
+    }
+    legend {
+      font-weight: bold;
+      color: #2e7d32;
+      padding: 0 8px;
+      font-size: 15px;
+    }
+
+    .form-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-start;
+      margin-bottom: 12px;
+    }
+    .form-row label {
+      flex: 0 0 220px;
+      padding-top: 6px;
+      font-weight: bold;
+      font-size: 14px;
+    }
+    .form-row .field {
+      flex: 1 1 260px;
+      min-width: 220px;
+    }
+
+    input[type="text"],
+    input[type="tel"],
+    input[type="date"],
+    select,
+    textarea {
+      width: 100%;
+      padding: 7px 8px;
+      border: 1px solid #9fb0c0;
+      border-radius: 2px;
+      font-size: 14px;
+      background: #fff;
+    }
+    input:focus, select:focus, textarea:focus {
+      outline: 2px solid #1a3f6b;
+      outline-offset: 1px;
+    }
+    textarea { resize: vertical; }
+
+    .required::after { content: " *"; color: #c62828; }
+
+    .error-msg {
+      color: #c62828;
+      font-size: 12.5px;
+      margin-top: 3px;
+      display: none;
+    }
+    .field.invalid input,
+    .field.invalid select,
+    .field.invalid textarea {
+      border-color: #c62828;
+      background: #fff5f5;
+    }
+    .field.invalid .error-msg { display: block; }
+
+    .hint { font-size: 12px; color: #777; margin-top: 2px; }
+
+    /* Captcha */
+    .captcha-box {
+      display: inline-block;
+      background: #e3e8ee;
+      border: 1px dashed #7d8b99;
+      padding: 6px 18px;
+      font-size: 18px;
+      font-weight: bold;
+      letter-spacing: 5px;
+      font-style: italic;
+      color: #1a3f6b;
+      user-select: none;
+      margin-bottom: 6px;
+    }
+
+    /* Declaration */
+    .declaration {
+      margin: 16px;
+      padding: 12px 16px;
+      background: #f2f6f2;
+      border: 1px solid #cfe0cf;
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+    }
+    .declaration input { margin-top: 4px; }
+
+    /* Buttons */
+    .btn-row {
+      margin: 0 16px 16px;
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    button {
+      padding: 9px 26px;
+      font-size: 15px;
+      border: none;
+      border-radius: 2px;
+      cursor: pointer;
+      font-weight: bold;
+    }
+    #validateBtn { background: #1a3f6b; color: #fff; }
+    #submitBtn   { background: #2e7d32; color: #fff; }
+    #resetBtn    { background: #e0e0e0; color: #333; border: 1px solid #aaa; }
+    button:hover { opacity: 0.9; }
+
+    /* Messages */
+    .status-msg {
+      margin: 0 16px 16px;
+      padding: 10px 14px;
+      font-size: 14px;
+      display: none;
+    }
+    .status-msg.success {
+      display: block;
+      background: #e8f5e9;
+      border: 1px solid #2e7d32;
+      color: #1b5e20;
+    }
+    .status-msg.failure {
+      display: block;
+      background: #fdecea;
+      border: 1px solid #c62828;
+      color: #b71c1c;
+    }
+
+    /* Summary */
+    #summarySection {
+      display: none;
+      margin: 0 16px 16px;
+      border: 1px solid #2e7d32;
+    }
+    #summarySection h3 {
+      background: #2e7d32;
+      color: #fff;
+      font-size: 15px;
+      padding: 8px 12px;
+    }
+    #summarySection table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+    #summarySection td {
+      border: 1px solid #d7dee6;
+      padding: 8px 12px;
+    }
+    #summarySection td:first-child {
+      font-weight: bold;
+      background: #f2f6f2;
+      width: 40%;
+    }
+
+    /* Footer */
+    footer {
+      background: #1a3f6b;
+      color: #cfd8e3;
+      text-align: center;
+      font-size: 13px;
+      padding: 14px 10px;
+      margin-top: 30px;
+    }
+
+    @media (max-width: 600px) {
+      .form-row label { flex: 1 1 100%; padding-top: 0; }
+      .header-titles h1 { font-size: 18px; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Government-style top bar -->
+  <div class="topbar">
+    <div class="container">
+      <span>भारत सरकार | Government of India (Demo)</span>
+      <span>Screen Reader Access | A- A A+</span>
+    </div>
+  </div>
+
+  <!-- Header -->
+  <header class="main-header">
+    <div class="container">
+      <div class="emblem" aria-hidden="true">&#9733;</div>
+      <div class="header-titles">
+        <h1>Farmer Support Registration Portal</h1>
+        <p>Department of Agriculture and Rural Welfare</p>
+      </div>
+      <div class="lang-select">
+        <label for="langSelect">Language</label>
+        <select id="langSelect" name="langSelect">
+          <option value="en">English</option>
+          <option value="hi">हिन्दी</option>
+          <option value="kn">ಕನ್ನಡ</option>
+          <option value="te">తెలుగు</option>
+          <option value="ta">தமிழ்</option>
+        </select>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+
+    <!-- Notice -->
+    <div class="notice" role="note">
+      <strong>Notice:</strong> Please enter valid details as per official documents.
+      This is a demo registration page.
+    </div>
+
+    <!-- Registration form card -->
+    <div class="card">
+      <div class="card-title">New Farmer Registration Form</div>
+
+      <form id="registrationForm" novalidate>
+
+        <!-- Block 1: Identity Verification -->
+        <fieldset>
+          <legend>Identity Verification</legend>
+
+          <div class="form-row">
+            <label for="aadhaar" class="required">Aadhaar Number</label>
+            <div class="field">
+              <input type="text" id="aadhaar" name="aadhaar" inputmode="numeric"
+                     maxlength="12" placeholder="12-digit Aadhaar number" required />
+              <div class="hint">Enter 12 digits without spaces</div>
+              <div class="error-msg" id="aadhaarError">Aadhaar number must be exactly 12 digits.</div>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <label for="state" class="required">State</label>
+            <div class="field">
+              <select id="state" name="state" required>
+                <option value="">-- Select State --</option>
+                <option value="Andhra Pradesh">Andhra Pradesh</option>
+                <option value="Bihar">Bihar</option>
+                <option value="Gujarat">Gujarat</option>
+                <option value="Karnataka">Karnataka</option>
+                <option value="Madhya Pradesh">Madhya Pradesh</option>
+                <option value="Maharashtra">Maharashtra</option>
+                <option value="Punjab">Punjab</option>
+                <option value="Rajasthan">Rajasthan</option>
+                <option value="Tamil Nadu">Tamil Nadu</option>
+                <option value="Telangana">Telangana</option>
+                <option value="Uttar Pradesh">Uttar Pradesh</option>
+                <option value="West Bengal">West Bengal</option>
+              </select>
+              <div class="error-msg" id="stateError">Please select your state.</div>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <label for="district" class="required">District</label>
+            <div class="field">
+              <input type="text" id="district" name="district" placeholder="Enter district name" required />
+              <div class="error-msg" id="districtError">District is required.</div>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <label for="farmerCategory" class="required">Farmer Category</label>
+            <div class="field">
+              <select id="farmerCategory" name="farmerCategory" required>
+                <option value="">-- Select Category --</option>
+                <option value="Small">Small (below 2 hectares)</option>
+                <option value="Marginal">Marginal (below 1 hectare)</option>
+                <option value="Other">Other</option>
+              </select>
+              <div class="error-msg" id="farmerCategoryError">Please select farmer category.</div>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <label for="captchaInput" class="required">Enter Captcha</label>
+            <div class="field">
+              <div class="captcha-box" id="captchaText" aria-label="Captcha code">7 K P 4 M</div>
+              <input type="text" id="captchaInput" name="captchaInput"
+                     placeholder="Type the code shown above" autocomplete="off" required />
+              <div class="error-msg" id="captchaError">Captcha does not match. Enter: 7KP4M</div>
+            </div>
+          </div>
+        </fieldset>
+
+        <!-- Block 2: Personal Details -->
+        <fieldset>
+          <legend>Personal Details</legend>
+
+          <div class="form-row">
+            <label for="fullName" class="required">Full Name</label>
+            <div class="field">
+              <input type="text" id="fullName" name="fullName" placeholder="Name as per Aadhaar" required />
+              <div class="error-msg" id="fullNameError">Full name is required.</div>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <label for="fatherName" class="required">Father / Husband Name</label>
+            <div class="field">
+              <input type="text" id="fatherName" name="fatherName" placeholder="Father or husband name" required />
+              <div class="error-msg" id="fatherNameError">Father / husband name is required.</div>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <label class="required" for="genderMale">Gender</label>
+            <div class="field" id="genderGroup" role="radiogroup" aria-label="Gender">
+              <label style="font-weight:normal; margin-right:16px;">
+                <input type="radio" id="genderMale" name="gender" value="Male" /> Male
+              </label>
+              <label style="font-weight:normal; margin-right:16px;">
+                <input type="radio" id="genderFemale" name="gender" value="Female" /> Female
+              </label>
+              <label style="font-weight:normal;">
+                <input type="radio" id="genderOther" name="gender" value="Other" /> Other
+              </label>
+              <div class="error-msg" id="genderError">Please select gender.</div>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <label for="dob" class="required">Date of Birth</label>
+            <div class="field">
+              <input type="date" id="dob" name="dob" required />
+              <div class="error-msg" id="dobError">Date of birth is required.</div>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <label for="mobile" class="required">Mobile Number</label>
+            <div class="field">
+              <input type="tel" id="mobile" name="mobile" inputmode="numeric"
+                     maxlength="10" placeholder="10-digit mobile number" required />
+              <div class="error-msg" id="mobileError">Mobile number must be exactly 10 digits.</div>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <label for="address" class="required">Address</label>
+            <div class="field">
+              <textarea id="address" name="address" rows="3" placeholder="House no, street, post office" required></textarea>
+              <div class="error-msg" id="addressError">Address is required.</div>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <label for="pincode" class="required">Pincode</label>
+            <div class="field">
+              <input type="text" id="pincode" name="pincode" inputmode="numeric"
+                     maxlength="6" placeholder="6-digit pincode" required />
+              <div class="error-msg" id="pincodeError">Pincode must be exactly 6 digits.</div>
+            </div>
+          </div>
+        </fieldset>
+
+        <!-- Block 3: Land Details -->
+        <fieldset>
+          <legend>Land Details</legend>
+
+          <div class="form-row">
+            <label for="ownershipType" class="required">Ownership Type</label>
+            <div class="field">
+              <select id="ownershipType" name="ownershipType" required>
+                <option value="">-- Select Ownership Type --</option>
+                <option value="Single">Single</option>
+                <option value="Joint">Joint</option>
+                <option value="Tenant">Tenant</option>
+              </select>
+              <div class="error-msg" id="ownershipTypeError">Please select ownership type.</div>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <label for="landRegId" class="required">Land Registration ID</label>
+            <div class="field">
+              <input type="text" id="landRegId" name="landRegId" placeholder="e.g. LR-2024-00123" required />
+              <div class="error-msg" id="landRegIdError">Land registration ID is required.</div>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <label for="surveyNumber" class="required">Survey / Khata Number</label>
+            <div class="field">
+              <input type="text" id="surveyNumber" name="surveyNumber" placeholder="e.g. 145/2A" required />
+              <div class="error-msg" id="surveyNumberError">Survey / khata number is required.</div>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <label for="landArea" class="required">Total Land Area (in acres)</label>
+            <div class="field">
+              <input type="text" id="landArea" name="landArea" inputmode="decimal" placeholder="e.g. 2.5" required />
+              <div class="error-msg" id="landAreaError">Enter a valid land area (numbers only).</div>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <label for="villageName" class="required">Village Name</label>
+            <div class="field">
+              <input type="text" id="villageName" name="villageName" placeholder="Enter village name" required />
+              <div class="error-msg" id="villageNameError">Village name is required.</div>
+            </div>
+          </div>
+        </fieldset>
+
+        <!-- Block 4: Bank Details -->
+        <fieldset>
+          <legend>Bank Details</legend>
+
+          <div class="form-row">
+            <label for="bankName" class="required">Bank Name</label>
+            <div class="field">
+              <input type="text" id="bankName" name="bankName" placeholder="e.g. State Bank of India" required />
+              <div class="error-msg" id="bankNameError">Bank name is required.</div>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <label for="branchName" class="required">Branch Name</label>
+            <div class="field">
+              <input type="text" id="branchName" name="branchName" placeholder="Enter branch name" required />
+              <div class="error-msg" id="branchNameError">Branch name is required.</div>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <label for="accountNumber" class="required">Account Number</label>
+            <div class="field">
+              <input type="text" id="accountNumber" name="accountNumber" inputmode="numeric"
+                     maxlength="18" placeholder="Bank account number" required />
+              <div class="error-msg" id="accountNumberError">Account number must be 9 to 18 digits.</div>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <label for="ifsc" class="required">IFSC Code</label>
+            <div class="field">
+              <input type="text" id="ifsc" name="ifsc" maxlength="11"
+                     placeholder="e.g. SBIN0001234" style="text-transform: uppercase;" required />
+              <div class="error-msg" id="ifscError">Enter a valid 11-character IFSC code (e.g. SBIN0001234).</div>
+            </div>
+          </div>
+        </fieldset>
+
+        <!-- Declaration -->
+        <div class="declaration">
+          <input type="checkbox" id="declaration" name="declaration" required />
+          <label for="declaration" style="font-weight:normal;">
+            I hereby declare that the information provided is true to the best of my knowledge.
+          </label>
+        </div>
+        <div class="error-msg" id="declarationError" style="margin: -8px 16px 12px;">
+          You must accept the declaration before submitting.
+        </div>
+
+        <!-- Buttons -->
+        <div class="btn-row">
+          <button type="button" id="validateBtn" name="validateBtn">Validate</button>
+          <button type="submit" id="submitBtn" name="submitBtn">Submit</button>
+          <button type="button" id="resetBtn" name="resetBtn">Reset</button>
+        </div>
+
+        <!-- Status messages -->
+        <div class="status-msg" id="statusMsg" role="status" aria-live="polite"></div>
+
+        <!-- Confirmation summary -->
+        <div id="summarySection" aria-live="polite">
+          <h3>Registration Summary (Demo)</h3>
+          <table>
+            <tr><td>Full Name</td><td id="summaryName"></td></tr>
+            <tr><td>State</td><td id="summaryState"></td></tr>
+            <tr><td>Mobile Number</td><td id="summaryMobile"></td></tr>
+            <tr><td>Total Land Area</td><td id="summaryLandArea"></td></tr>
+          </table>
+        </div>
+
+      </form>
+    </div>
+  </main>
+
+  <footer>
+    This is a static demo website for form-filling agent testing.
+  </footer>
+
+  <script>
+    (function () {
+      "use strict";
+
+      var CAPTCHA_CODE = "7KP4M";
+
+      var form = document.getElementById("registrationForm");
+      var statusMsg = document.getElementById("statusMsg");
+      var summarySection = document.getElementById("summarySection");
+
+      // Validators per field id. Each returns true when valid.
+      var validators = {
+        aadhaar: function (v) { return /^\d{12}$/.test(v); },
+        state: function (v) { return v !== ""; },
+        district: function (v) { return v.trim() !== ""; },
+        farmerCategory: function (v) { return v !== ""; },
+        captchaInput: function (v) { return v.replace(/\s+/g, "").toUpperCase() === CAPTCHA_CODE; },
+        fullName: function (v) { return v.trim() !== ""; },
+        fatherName: function (v) { return v.trim() !== ""; },
+        dob: function (v) { return v !== ""; },
+        mobile: function (v) { return /^\d{10}$/.test(v); },
+        address: function (v) { return v.trim() !== ""; },
+        pincode: function (v) { return /^\d{6}$/.test(v); },
+        ownershipType: function (v) { return v !== ""; },
+        landRegId: function (v) { return v.trim() !== ""; },
+        surveyNumber: function (v) { return v.trim() !== ""; },
+        landArea: function (v) { return /^\d+(\.\d+)?$/.test(v.trim()) && parseFloat(v) > 0; },
+        villageName: function (v) { return v.trim() !== ""; },
+        bankName: function (v) { return v.trim() !== ""; },
+        branchName: function (v) { return v.trim() !== ""; },
+        accountNumber: function (v) { return /^\d{9,18}$/.test(v); },
+        ifsc: function (v) { return /^[A-Z]{4}0[A-Z0-9]{6}$/i.test(v.trim()); }
+      };
+
+      function setFieldValidity(id, valid) {
+        var el = document.getElementById(id);
+        var wrapper = el.closest(".field");
+        if (!wrapper) return;
+        wrapper.classList.toggle("invalid", !valid);
+      }
+
+      function validateGender() {
+        var checked = form.querySelector('input[name="gender"]:checked');
+        var error = document.getElementById("genderError");
+        error.style.display = checked ? "none" : "block";
+        return !!checked;
+      }
+
+      function validateDeclaration() {
+        var checked = document.getElementById("declaration").checked;
+        var error = document.getElementById("declarationError");
+        error.style.display = checked ? "none" : "block";
+        return checked;
+      }
+
+      function validateForm() {
+        var allValid = true;
+        var firstInvalid = null;
+
+        Object.keys(validators).forEach(function (id) {
+          var el = document.getElementById(id);
+          var valid = validators[id](el.value);
+          setFieldValidity(id, valid);
+          if (!valid) {
+            allValid = false;
+            if (!firstInvalid) firstInvalid = el;
+          }
+        });
+
+        if (!validateGender()) allValid = false;
+        if (!validateDeclaration()) allValid = false;
+
+        if (firstInvalid) {
+          firstInvalid.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+        return allValid;
+      }
+
+      function showStatus(text, kind) {
+        statusMsg.textContent = text;
+        statusMsg.className = "status-msg " + kind;
+      }
+
+      function clearStatus() {
+        statusMsg.textContent = "";
+        statusMsg.className = "status-msg";
+      }
+
+      // Re-validate a field as the user leaves it, clearing errors early.
+      Object.keys(validators).forEach(function (id) {
+        var el = document.getElementById(id);
+        el.addEventListener("blur", function () {
+          if (el.value !== "") setFieldValidity(id, validators[id](el.value));
+        });
+        el.addEventListener("input", function () {
+          var wrapper = el.closest(".field");
+          if (wrapper && wrapper.classList.contains("invalid") && validators[id](el.value)) {
+            wrapper.classList.remove("invalid");
+          }
+        });
+      });
+
+      // Digits-only guard for numeric fields.
+      ["aadhaar", "mobile", "pincode", "accountNumber"].forEach(function (id) {
+        var el = document.getElementById(id);
+        el.addEventListener("input", function () {
+          el.value = el.value.replace(/\D/g, "");
+        });
+      });
+
+      // Validate button: check everything, don't submit.
+      document.getElementById("validateBtn").addEventListener("click", function () {
+        summarySection.style.display = "none";
+        if (validateForm()) {
+          showStatus("All fields are valid. You may submit the form.", "success");
+        } else {
+          showStatus("Some fields have errors. Please correct the highlighted fields.", "failure");
+        }
+      });
+
+      // Submit: validate, then show success + summary (no real submission).
+      form.addEventListener("submit", function (e) {
+        e.preventDefault();
+        if (!validateForm()) {
+          summarySection.style.display = "none";
+          showStatus("Submission failed. Please correct the highlighted fields.", "failure");
+          return;
+        }
+
+        showStatus("Demo form submitted successfully.", "success");
+
+        document.getElementById("summaryName").textContent =
+          document.getElementById("fullName").value;
+        document.getElementById("summaryState").textContent =
+          document.getElementById("state").value;
+        document.getElementById("summaryMobile").textContent =
+          document.getElementById("mobile").value;
+        document.getElementById("summaryLandArea").textContent =
+          document.getElementById("landArea").value + " acres";
+        summarySection.style.display = "block";
+        summarySection.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      });
+
+      // Reset: clear values, errors, status, and summary.
+      document.getElementById("resetBtn").addEventListener("click", function () {
+        form.reset();
+        clearStatus();
+        summarySection.style.display = "none";
+        form.querySelectorAll(".field.invalid").forEach(function (w) {
+          w.classList.remove("invalid");
+        });
+        document.getElementById("genderError").style.display = "none";
+        document.getElementById("declarationError").style.display = "none";
+      });
+    })();
+  </script>
+</body>
+</html>

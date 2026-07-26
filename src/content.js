@@ -271,6 +271,7 @@ const session = {
   port: null,
   finishProcessing: null,
   threshold: VAD.MIN_THRESHOLD,
+  pendingFormFill: null, // languageCode when the background asked us to start form filling
   ui: null
 };
 
@@ -471,6 +472,7 @@ function processUtterance(blob) {
     let streamDone = false;
     let settled = false;
     let heardAudio = false;
+    let formFillRequested = false; // a form-fill turn has no audio reply by design
     let outcome = "done"; // becomes "error" if the backend or playback reports a failure
 
     const finish = (status = "done") => {
@@ -497,7 +499,7 @@ function processUtterance(blob) {
 
       const chunk = queue.shift();
       if (!chunk) {
-        if (streamDone) finish(heardAudio ? outcome : "error");
+        if (streamDone) finish(heardAudio || formFillRequested ? outcome : "error");
         return;
       }
 
@@ -548,6 +550,12 @@ function processUtterance(blob) {
               queue.push({ base64: msg.base64, mimeType: msg.mimeType || "audio/mpeg" });
               pump();
               break;
+            case "form-fill":
+              // Background decided the user wants the form filled; the session
+              // loop picks this up after the current reply finishes playing.
+              session.pendingFormFill = msg.languageCode || "en-IN";
+              formFillRequested = true;
+              break;
             case "error":
               console.error("SaarthiX error:", msg.error);
               outcome = "error";
@@ -566,7 +574,16 @@ function processUtterance(blob) {
           if (!playing && !queue.length) finish(outcome);
         });
 
-        port.postMessage({ type: "VOICE_QUERY", audioBase64, pageText });
+        // How many empty fields the page's form has — lets the background offer
+        // form filling and route "fill the form" intents.
+        let formFieldCount = 0;
+        try {
+          if (typeof extractFormSchema === "function") {
+            formFieldCount = extractFormSchema().filter((f) => !f.prefilled).length;
+          }
+        } catch (_) {}
+
+        port.postMessage({ type: "VOICE_QUERY", audioBase64, pageText, formFieldCount });
       })
       .catch((err) => {
         if (isExtensionContextInvalidated(err)) {
@@ -585,6 +602,20 @@ async function runSessionLoop() {
   await calibrateThreshold(buffer);
 
   while (session.active) {
+    if (session.pendingFormFill) {
+      const languageCode = session.pendingFormFill;
+      session.pendingFormFill = null;
+      setSessionState("processing");
+      try {
+        await runFormFill(languageCode, buffer);
+      } catch (err) {
+        console.error("SaarthiX form fill error:", err.message);
+        hideFormPanel();
+        clearFormHighlights();
+      }
+      continue;
+    }
+
     setSessionState("listening");
     const blob = await captureUtterance(buffer);
     if (!session.active || !blob) continue;
@@ -675,6 +706,206 @@ function stopSession() {
   session.recorder = null;
   setSessionState("idle");
   if (window.SaarthiCaptions) window.SaarthiCaptions.hide();
+}
+
+// ---------------------------------------------------------------------------
+// Form-filling mode (runs inside the voice session — no separate button)
+//
+// extractFormSchema()/fillFormField()/highlightFormField()/clearFormHighlights()
+// come from forms.js, loaded before this file in manifest.json.
+//
+// Every voice query reports how many empty form fields the page has. When the
+// background detects the user wants the form filled — either they asked
+// outright, or they said yes after the assistant offered at the end of an
+// answer — it sends a "form-fill" directive over the port. The session loop
+// then walks field by field: ask (TTS) -> listen (same VAD capture as Q&A) ->
+// normalize (LLM) -> fill (native setter in forms.js) -> confirm (TTS).
+// Captcha/OTP/file/password fields are handed to the user: we highlight the
+// field, explain what to do, and wait for the Continue button.
+// We never press submit — the outro asks the user to review and submit.
+// ---------------------------------------------------------------------------
+
+const formPanel = { root: null, status: null, continueBtn: null };
+
+function ensureFormPanel() {
+  if (formPanel.root) return;
+  formPanel.root = document.createElement("div");
+  formPanel.root.id = "saarthix-panel";
+  formPanel.status = document.createElement("div");
+  formPanel.status.id = "saarthix-panel-status";
+  formPanel.continueBtn = document.createElement("button");
+  formPanel.continueBtn.id = "saarthix-panel-continue";
+  formPanel.continueBtn.textContent = "Continue ▶";
+  formPanel.root.appendChild(formPanel.status);
+  formPanel.root.appendChild(formPanel.continueBtn);
+  document.body.appendChild(formPanel.root);
+}
+
+function showFormPanel(statusText, showContinue) {
+  ensureFormPanel();
+  formPanel.status.textContent = statusText;
+  formPanel.continueBtn.style.display = showContinue ? "block" : "none";
+  formPanel.root.style.display = "block";
+}
+
+function hideFormPanel() {
+  if (formPanel.root) formPanel.root.style.display = "none";
+}
+
+function waitForContinue() {
+  return new Promise((resolve) => {
+    formPanel.continueBtn.addEventListener("click", resolve, { once: true });
+  });
+}
+
+function sendMessageAsync(message) {
+  return new Promise((resolve) => chrome.runtime.sendMessage(message, resolve));
+}
+
+// TTS now returns MP3 (see tts.js OUTPUT_AUDIO_CODEC); decode via the session's
+// Web Audio pipeline, which is codec-agnostic, instead of a typed data URL.
+async function playFormAudio(base64) {
+  if (!base64) return;
+  try {
+    await playAudioChunk({ base64 });
+  } catch (err) {
+    // Never let a broken clip hang the form flow.
+    console.warn("SaarthiX: form audio playback failed", err.message);
+  }
+}
+
+async function formSpeak(text, languageCode) {
+  if (!text) return;
+  const res = await sendMessageAsync({ type: "SPEAK", text, languageCode });
+  if (res && res.ok) {
+    if (session.active) setSessionState("speaking");
+    await playFormAudio(res.audioBase64);
+    if (session.active) setSessionState("processing");
+  }
+}
+
+// One spoken form answer, captured with the same VAD as Q&A utterances.
+// Resolves with base64 webm, or null if the session was stopped / nothing said.
+async function captureFormAnswer(buffer) {
+  if (!session.active || !session.analyser) return null;
+  setSessionState("listening");
+  const blob = await captureUtterance(buffer);
+  if (!session.active || !blob) return null;
+  setSessionState("processing");
+  return blobToBase64(blob);
+}
+
+async function askAndFill(field, say, languageCode, buffer) {
+  // Two attempts: if the answer doesn't fit the field (or filling fails), re-ask once.
+  for (let attempt = 0; attempt < 2 && session.active; attempt++) {
+    showFormPanel(`🔊 ${field.label}`, false);
+    await formSpeak(say, languageCode);
+
+    showFormPanel(`🎙 Speak now — ${field.label}`, false);
+    const audioBase64 = await captureFormAnswer(buffer);
+    if (!audioBase64) continue; // stopped or silence — retry once, then move on
+    showFormPanel("⏳ Understanding…", false);
+
+    const res = await sendMessageAsync({ type: "FORM_ANSWER", audioBase64, field, languageCode });
+    if (!res || !res.ok) {
+      console.error("SaarthiX form answer error:", res && res.error);
+      continue;
+    }
+
+    const filled = res.value !== "" && fillFormField(field.id, res.value);
+    if (filled && field.kbKey && window.SaarthiKB) {
+      // Remember the answer so next time this detail auto-fills from the KB.
+      Promise.resolve(window.SaarthiKB.updateField(field.kbKey, res.value)).catch(() => {});
+    }
+    if (res.sayAudio) await playFormAudio(res.sayAudio); // confirmation (or "please repeat")
+    if (filled) return true;
+  }
+  return false; // leave the field for the user; keep the flow moving
+}
+
+// Fields about someone/something other than the user must never exchange
+// values with the profile — kb.js's alias matching maps e.g. "Father Name" and
+// "Name of the school" to fullName via the bare "name" alias.
+const KB_NOT_SELF_RE = /\b(father|mother|parent|guardian|spouse|husband|wife|nominee|school|college|institute|company|office|employer|reference|emergency)\b/i;
+
+// Pre-fill fields the KB profile (kb.js) already knows, silently. Returns how
+// many it filled; those fields are marked prefilled so the plan skips them.
+// Also tags each schema field with its KB key so new answers can be saved back.
+async function prefillFromKB(schema) {
+  if (!window.SaarthiKB) return 0;
+  let filled = 0;
+  const profile = await window.SaarthiKB.getProfile();
+  const kbKeyByFieldId = {};
+  window.SaarthiKB.scanForm().forEach((d) => {
+    const fid = d.primary.getAttribute("data-saarthi-field");
+    if (fid && d.key) kbKeyByFieldId[fid] = d.key;
+  });
+  for (const f of schema) {
+    f.kbKey = KB_NOT_SELF_RE.test(f.label) ? null : kbKeyByFieldId[f.id] || null;
+    const known = f.kbKey ? profile[f.kbKey] : null;
+    if (!f.prefilled && !f.needsHuman && known != null && known !== "") {
+      if (fillFormField(f.id, known)) {
+        f.prefilled = String(known);
+        filled++;
+      }
+    }
+  }
+  return filled;
+}
+
+async function runFormFill(languageCode, buffer) {
+  const schema = extractFormSchema();
+  if (!schema.length) return;
+
+  showFormPanel("⏳ Preparing your questions…", false);
+
+  let kbPrefilled = 0;
+  try {
+    kbPrefilled = await prefillFromKB(schema);
+  } catch (err) {
+    console.warn("SaarthiX: KB pre-fill failed", err.message);
+  }
+
+  const planRes = await sendMessageAsync({ type: "FORM_PLAN", schema, languageCode, kbPrefilled });
+  if (!planRes || !planRes.ok) {
+    console.error("SaarthiX form plan error:", planRes && planRes.error);
+    hideFormPanel();
+    return;
+  }
+  const { plan } = planRes;
+  const fieldById = new Map(schema.map((f) => [f.id, f]));
+
+  if (!plan.steps.length) {
+    await formSpeak("This form is already filled. Please check it and submit.", languageCode);
+    hideFormPanel();
+    return;
+  }
+
+  await formSpeak(plan.intro, languageCode);
+
+  for (const step of plan.steps) {
+    if (!session.active) break;
+    const field = fieldById.get(step.fieldId);
+    if (!field) continue;
+    highlightFormField(field.id);
+
+    if (field.needsHuman) {
+      // Captcha / OTP / file / password: the user does it, we wait.
+      showFormPanel(`✋ Your turn: ${field.label}`, true);
+      await formSpeak(step.say, languageCode);
+      await waitForContinue();
+    } else {
+      await askAndFill(field, step.say, languageCode, buffer);
+    }
+    clearFormHighlights();
+  }
+
+  clearFormHighlights();
+  if (session.active) {
+    showFormPanel("✅ Done — please review and submit", false);
+    await formSpeak(plan.outro, languageCode);
+  }
+  hideFormPanel();
 }
 
 console.log("SaarthiX: content script loaded", { url: window.location.href });

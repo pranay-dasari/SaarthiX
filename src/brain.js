@@ -98,7 +98,10 @@ export async function choosePageTool(question, pageText, history = [], toolResul
   return { tool, query: typeof decision.query === "string" ? decision.query : question };
 }
 
-export async function getAnswer(pageText, question, languageCode, history = []) {
+// `options.offerFormFill`: when true, the answer ends with a one-sentence offer
+// (in the same language) to help fill the page's form by voice. The background
+// sets it once per page when the page has a form.
+export async function getAnswer(pageText, question, languageCode, history = [], options = {}) {
   if (!pageText || pageText.trim().length < MIN_PAGE_TEXT_LENGTH) {
     return "I couldn't extract enough readable text from this page yet. Try refreshing the page, opening a regular article/product page, or asking again after the page finishes loading.";
   }
@@ -111,12 +114,16 @@ export async function getAnswer(pageText, question, languageCode, history = []) 
     { role: "assistant", content: answer }
   ]);
 
+  const formOfferLine = options.offerFormFill
+    ? " This page also has a form the assistant can fill by voice: after answering, add one short sentence in the same language asking whether the user would like help filling the form."
+    : "";
+
   return chatCompletion({
-    maxTokens,
+    maxTokens: maxTokens + (options.offerFormFill ? 40 : 0),
     messages: [
       {
         role: "system",
-        content: `You are SaarthiX, a concise voice assistant for webpages. Use only the supplied page content and tool results as your context. Answer in ${sentences}. If the context does not contain the answer, say so instead of guessing. Never say you do not have scraping tools; the extension already supplied scraped context/tool results. Respond in ${languageCode || "the same language as the question"}.\n\nPage context and tool results:\n${truncatedPageText}`
+        content: `You are SaarthiX, a concise voice assistant for webpages. Use only the supplied page content and tool results as your context. Answer in ${sentences}. If the context does not contain the answer, say so instead of guessing. Never say you do not have scraping tools; the extension already supplied scraped context/tool results. Respond ONLY in ${languageCode ? `the language with code ${languageCode}` : "the same language as the question"}: every single sentence must be in that language — never mix in English sentences. The page content is often in English; translate what you take from it into the response language instead of quoting it in English.${formOfferLine}\n\nPage context and tool results:\n${truncatedPageText}`
       },
       ...historyMessages,
       { role: "user", content: question }
