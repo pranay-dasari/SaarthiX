@@ -23,6 +23,31 @@ function extractAudioBase64(data) {
   return "";
 }
 
+// Split an answer into speakable chunks on sentence boundaries so the caller can
+// synthesize and start playing the first sentence while later ones are still in
+// flight. Handles Latin (.!?) and Indic (।) sentence enders. Chunks are grouped
+// up to ~targetChars so we don't fire a request per tiny fragment.
+export function chunkTextForSpeech(text, { targetChars = 140 } = {}) {
+  const clean = (text || "").trim();
+  if (!clean) return [];
+
+  const sentences = clean.match(/[^.!?।\n]+[.!?।]*\s*|\n+/g) || [clean];
+  const chunks = [];
+  let buffer = "";
+
+  for (const sentence of sentences) {
+    const piece = sentence.replace(/\n+/g, " ");
+    if (buffer && (buffer.length + piece.length) > targetChars) {
+      chunks.push(buffer.trim());
+      buffer = piece;
+    } else {
+      buffer += piece;
+    }
+  }
+  if (buffer.trim()) chunks.push(buffer.trim());
+  return chunks;
+}
+
 export async function synthesizeSpeech(text, languageCode) {
   if (!text) throw new Error("TTS failed: missing text");
 

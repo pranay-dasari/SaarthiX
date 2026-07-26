@@ -4,7 +4,7 @@
 
 import { transcribeAudio } from "./stt.js";
 import { choosePageTool, getAnswer } from "./brain.js";
-import { synthesizeSpeech } from "./tts.js";
+import { synthesizeSpeech, chunkTextForSpeech } from "./tts.js";
 
 const MAX_STORED_HISTORY_TURNS = 10;
 const MAX_TOOL_CALLS = 2;
@@ -103,39 +103,78 @@ async function enrichPageContext(tabId, transcript, pageText, history) {
   return { enrichedText, toolResults };
 }
 
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.type !== "VOICE_QUERY") return;
+function safePost(port, payload) {
+  try {
+    port.postMessage(payload);
+    return true;
+  } catch (_) {
+    // Port was disconnected (e.g. user pressed Stop) — nothing to do.
+    return false;
+  }
+}
 
-  (async () => {
-    try {
-      const tabId = sender.tab?.id;
-      const pageText = message.pageText || "";
-      const historyPromise = tabId != null ? loadHistory(tabId, pageText) : Promise.resolve([]);
-      const sttPromise = transcribeAudio(message.audioBase64);
-      const [history, { transcript, languageCode }] = await Promise.all([historyPromise, sttPromise]);
+// Synthesize the answer sentence-by-sentence and stream each finished clip back
+// as soon as it's ready, in order. All syntheses are fired concurrently so the
+// first (short) sentence returns fast and playback starts while the rest are
+// still being generated — cutting perceived latency to time-to-first-sentence.
+async function streamSpeech(port, answerText, languageCode) {
+  const chunks = chunkTextForSpeech(answerText);
+  if (!chunks.length) return;
 
-      console.log("SaarthiX Agent: received voice query", {
-        audioChars: message.audioBase64?.length || 0,
-        pageTextChars: pageText.length,
-        historyTurns: history.length,
-        transcript
-      });
+  const jobs = chunks.map((chunk) =>
+    synthesizeSpeech(chunk, languageCode).then(
+      (audioBase64) => ({ audioBase64 }),
+      (error) => ({ error })
+    )
+  );
 
-      const { enrichedText, toolResults } = await enrichPageContext(tabId, transcript, pageText, history);
-      const answerText = await getAnswer(enrichedText, transcript, languageCode, history);
-      const audioBase64 = await synthesizeSpeech(answerText, languageCode);
-
-      if (tabId != null) {
-        const updatedHistory = [...history, { question: transcript, answer: answerText }].slice(-MAX_STORED_HISTORY_TURNS);
-        await saveHistory(tabId, pageText, updatedHistory);
-      }
-
-      sendResponse({ ok: true, transcript, languageCode, answerText, audioBase64, toolResults });
-    } catch (err) {
-      console.error("SaarthiX Agent error:", err);
-      sendResponse({ ok: false, error: err.message });
+  for (const job of jobs) {
+    const { audioBase64, error } = await job;
+    if (error) {
+      console.error("SaarthiX TTS chunk failed:", error.message);
+      continue;
     }
-  })();
+    if (!safePost(port, { type: "audio-chunk", base64: audioBase64 })) return;
+  }
+}
 
-  return true;
+async function handleVoiceQuery(port, message) {
+  const tabId = port.sender?.tab?.id;
+  try {
+    const pageText = message.pageText || "";
+    const historyPromise = tabId != null ? loadHistory(tabId, pageText) : Promise.resolve([]);
+    const sttPromise = transcribeAudio(message.audioBase64);
+    const [history, { transcript, languageCode }] = await Promise.all([historyPromise, sttPromise]);
+
+    console.log("SaarthiX Agent: received voice query", {
+      audioChars: message.audioBase64?.length || 0,
+      pageTextChars: pageText.length,
+      historyTurns: history.length,
+      transcript
+    });
+
+    const { enrichedText, toolResults } = await enrichPageContext(tabId, transcript, pageText, history);
+    const answerText = await getAnswer(enrichedText, transcript, languageCode, history);
+
+    safePost(port, { type: "meta", transcript, languageCode, answerText, toolResults });
+
+    await streamSpeech(port, answerText, languageCode);
+
+    if (tabId != null) {
+      const updatedHistory = [...history, { question: transcript, answer: answerText }].slice(-MAX_STORED_HISTORY_TURNS);
+      await saveHistory(tabId, pageText, updatedHistory);
+    }
+
+    safePost(port, { type: "done" });
+  } catch (err) {
+    console.error("SaarthiX Agent error:", err);
+    safePost(port, { type: "error", error: err.message });
+  }
+}
+
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name !== "voice-query") return;
+  port.onMessage.addListener((message) => {
+    if (message?.type === "VOICE_QUERY") handleVoiceQuery(port, message);
+  });
 });
