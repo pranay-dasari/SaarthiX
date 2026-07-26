@@ -1,8 +1,4 @@
-function extractPageText() {
-  const clone = document.body.cloneNode(true);
-  clone.querySelectorAll("script, style, nav, header, footer, aside, noscript").forEach((el) => el.remove());
-  return clone.innerText.replace(/\s+/g, " ").trim().slice(0, 8000);
-}
+// extractPageText() comes from scraper.js, loaded before this file in manifest.json.
 
 function createMicButton() {
   const button = document.createElement("button");

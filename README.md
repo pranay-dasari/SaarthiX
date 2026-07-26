@@ -11,13 +11,24 @@ language, and (stretch goal) fill out web forms by voice instead of typing.
 - **Sarvam-M** — reasoning / summarization / conversation
 - **Bulbul** — text-to-speech
 
-## Project structure
+## Project structure & ownership
 
+Each person owns one file with a fixed function signature. Don't change a signature
+without telling the other two — `background.js` calls these exactly as declared.
+
+| Owner | File | Contract |
+|---|---|---|
+| Person 1 (scraping) | `src/scraper.js` | `extractPageText() → string` |
+| Person 3 (STT/TTS) | `src/stt.js` | `transcribeAudio(audioBase64, languageCode) → Promise<string>` |
+| Person 3 (STT/TTS) | `src/tts.js` | `synthesizeSpeech(text, languageCode) → Promise<string base64>` |
+| Bridge | `src/brain.js` | `getAnswer(pageText, question, languageCode) → Promise<string>` |
+
+Supporting files (shouldn't need edits mid-build):
 ```
 manifest.json          MV3 extension manifest
-src/content.js          injects the mic button, extracts page text, records audio
+src/background.js       orchestrator — calls stt → brain → tts in sequence
+src/content.js           mic button UI, recording, calls scraper.js's extractPageText()
 src/content.css          mic button styling
-src/background.js       service worker — calls the Sarvam APIs
 src/popup.html/.js       toolbar popup, shows API key status
 src/config.example.js   template for API key config
 src/config.js           your local key (gitignored, not committed)
