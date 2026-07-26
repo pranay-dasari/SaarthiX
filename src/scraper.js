@@ -159,6 +159,10 @@ function saarthiIsHidden(el) {
   if (style && (style.display === "none" || style.visibility === "hidden" || style.opacity === "0")) {
     return true;
   }
+  // A 0x0 box only reliably means "hidden" for leaf elements. Containers can
+  // legitimately report 0x0 (display: contents, some custom elements/portals)
+  // while their children still render fully — don't nuke their whole subtree.
+  if (el.children && el.children.length > 0) return false;
   var rect = el.getBoundingClientRect ? el.getBoundingClientRect() : null;
   if (rect && rect.width === 0 && rect.height === 0) return true;
   return false;
