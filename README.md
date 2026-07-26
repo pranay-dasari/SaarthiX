@@ -19,9 +19,25 @@ without telling the other two — `background.js` calls these exactly as declare
 | Owner | File | Contract |
 |---|---|---|
 | Person 1 (scraping) | `src/scraper.js` | `extractPageText() → string` |
-| Person 3 (STT/TTS) | `src/stt.js` | `transcribeAudio(audioBase64, languageCode) → Promise<string>` |
+| Person 3 (STT/TTS) | `src/stt.js` | `transcribeAudio(audioBase64) → Promise<{ transcript, languageCode }>` |
 | Person 3 (STT/TTS) | `src/tts.js` | `synthesizeSpeech(text, languageCode) → Promise<string base64>` |
-| Bridge | `src/brain.js` | `getAnswer(pageText, question, languageCode) → Promise<string>` |
+| Bridge | `src/brain.js` | `getAnswer(pageText, question, languageCode, history?) → Promise<string>` |
+
+Saaras (STT) auto-detects the spoken language, so `languageCode` flows STT → brain → TTS —
+whatever language the user speaks in is what they get answered in.
+
+### Sarvam API notes (verified against docs.sarvam.ai)
+
+- Base URL: `https://api.sarvam.ai`. Auth header: `api-subscription-key: <key>` (or
+  `Authorization: Bearer <key>`). **Auth failures return HTTP 403, not 401.**
+- `POST /speech-to-text` — **multipart/form-data**, not JSON. Fields: `file` (binary,
+  max 30s for the sync REST endpoint), `model: "saaras:v3"`. Don't set `Content-Type`
+  manually — let `fetch` generate the multipart boundary.
+- `POST /text-to-speech` — JSON. Requires `text`, `target_language_code`, `speaker`
+  (e.g. `"shubh"`), `model: "bulbul:v3"`. Max 2500 chars per request.
+- `POST /v1/chat/completions` — JSON, OpenAI-compatible shape. `model` is
+  `"sarvam-30b"` (faster/cheaper) or `"sarvam-105b"` (higher quality, more latency) —
+  **not** `"sarvam-m"`.
 
 Supporting files (shouldn't need edits mid-build):
 ```
