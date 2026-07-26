@@ -8,6 +8,7 @@ import { SARVAM_API_KEY, SARVAM_API_BASE } from "./config.js";
 const DEFAULT_LANGUAGE_CODE = "en-IN";
 const DEFAULT_SPEAKER = "shubh";
 const TTS_MODEL = "bulbul:v3";
+const OUTPUT_AUDIO_CODEC = "mp3";
 
 async function readError(res) {
   const body = await res.text();
@@ -56,7 +57,8 @@ export async function synthesizeSpeech(text, languageCode) {
     chars: text.length,
     targetLanguageCode,
     speaker: DEFAULT_SPEAKER,
-    model: TTS_MODEL
+    model: TTS_MODEL,
+    outputAudioCodec: OUTPUT_AUDIO_CODEC
   });
 
   const res = await fetch(`${SARVAM_API_BASE}/text-to-speech`, {
@@ -70,7 +72,7 @@ export async function synthesizeSpeech(text, languageCode) {
       target_language_code: targetLanguageCode,
       speaker: DEFAULT_SPEAKER,
       model: TTS_MODEL,
-      output_audio_codec: "wav"
+      output_audio_codec: OUTPUT_AUDIO_CODEC
     })
   });
 

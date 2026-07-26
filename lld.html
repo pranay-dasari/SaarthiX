@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Saarthi — Low-Level Design (3-person integration spec)</title>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#141b24; --panel2:#1b2530; --line:#2a3743; --ink:#e6edf3;
+    --muted:#8b98a5; --dim:#5b6975; --saffron:#ff9933; --green:#2ecc71; --cyan:#38bdf8;
+    --violet:#a78bfa; --amber:#fbbf24; --rose:#fb7185;
+    --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Inter,Roboto,sans-serif;
+    --mono:ui-monospace,'JetBrains Mono',Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.55;
+    background-image:radial-gradient(circle at 15% 0,rgba(255,153,51,.06),transparent 42%),radial-gradient(circle at 85% 8%,rgba(56,189,248,.06),transparent 42%)}
+  .wrap{max-width:1120px;margin:0 auto;padding:36px 24px 90px}
+  h1{font-size:30px;margin:0 0 2px;letter-spacing:-.4px;
+    background:linear-gradient(90deg,var(--saffron),#fff 55%,var(--green));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .sub{color:var(--muted);font-size:14px;margin-bottom:6px}
+  .chips{display:flex;gap:8px;flex-wrap:wrap;font-family:var(--mono);font-size:11px;margin:14px 0 6px}
+  .chip{background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:4px 11px;color:var(--muted)}
+  h2{font-size:13px;letter-spacing:2px;text-transform:uppercase;color:var(--dim);margin:50px 0 16px;padding-bottom:8px;border-bottom:1px dashed var(--line)}
+  h2 .n{color:var(--saffron);margin-right:8px}
+  h3{font-size:17px;margin:22px 0 8px}
+  p.lead{color:var(--muted);max-width:840px;margin-top:-4px}
+  code{font-family:var(--mono);font-size:12.5px}
+  pre{background:#0a0f15;border:1px solid var(--line);border-radius:10px;padding:14px 16px;overflow:auto;font-family:var(--mono);font-size:12.5px;line-height:1.5;color:#cfe3f2}
+  pre .k{color:var(--violet)} pre .s{color:var(--green)} pre .c{color:var(--dim)} pre .f{color:var(--amber)}
+  .owner{display:inline-block;font-family:var(--mono);font-size:11px;padding:2px 9px;border-radius:6px;border:1px solid var(--line);margin-left:6px}
+  .oA{color:var(--saffron);border-color:rgba(255,153,51,.4)} .oB{color:var(--cyan);border-color:rgba(56,189,248,.4)} .oC{color:var(--violet);border-color:rgba(167,139,250,.4)}
+  table{width:100%;border-collapse:collapse;font-size:13px;background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden;margin:6px 0}
+  th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{background:var(--panel2);color:var(--dim);font-family:var(--mono);font-size:11px;letter-spacing:1px;text-transform:uppercase}
+  tr:last-child td{border-bottom:0}
+  td code{background:var(--panel2);border:1px solid var(--line);border-radius:5px;padding:1px 6px;color:var(--cyan)}
+  .seam{border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:10px;background:var(--panel);padding:16px 18px;margin:14px 0}
+  .seam .cap{font-family:var(--mono);font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:1px}
+  .io{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:10px}
+  @media(max-width:720px){.io{grid-template-columns:1fr}}
+  .io .box{background:#0a0f15;border:1px solid var(--line);border-radius:9px;padding:12px}
+  .io .box .t{font-family:var(--mono);font-size:11px;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px}
+  .in .t{color:var(--green)} .out .t{color:var(--amber)}
+  .note{background:rgba(56,189,248,.07);border:1px solid rgba(56,189,248,.3);border-radius:10px;padding:14px 16px;color:var(--muted);font-size:13.5px;margin:14px 0}
+  .note b{color:var(--ink)}
+  ol.steps{padding-left:20px;margin:8px 0}
+  ol.steps li{margin:7px 0;color:var(--muted);font-size:14px}
+  ol.steps li b{color:var(--ink)}
+  .files{font-family:var(--mono);font-size:12px;color:var(--muted)}
+  .files b{color:var(--ink)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Saarthi — Low-Level Design</h1>
+  <div class="sub">Granular I/O contracts for 3 builders · scope: extension · scraping · brain · voice (STT/TTS)</div>
+  <div class="chips">
+    <span class="chip">MV3 · vanilla JS</span>
+    <span class="chip">Sarvam: Saarika · Bulbul · Sarvam-M · Mayura</span>
+    <span class="chip">worker = hub, proxies all Sarvam</span>
+  </div>
+
+  <!-- ================= FOUNDATION ================= -->
+  <h2><span class="n">00</span> Shared foundation — agree on this in the first 15 min</h2>
+  <p class="lead">Everything below is glued by <b>one message envelope</b> and <b>one language code type</b>. Every message
+  is request/response with a <code>reqId</code>. The <b>background worker is the only hub</b> — the panel and content
+  script never talk to each other directly, and only the worker holds the Sarvam key.</p>
+
+  <pre><span class="c">// shared/types.js  — everyone imports this</span>
+<span class="k">Lang</span> = <span class="s">"hi-IN"|"kn-IN"|"ta-IN"|"te-IN"|"bn-IN"|"mr-IN"|"en-IN"|...</span>   <span class="c">// Sarvam codes</span>
+
+<span class="c">// every message on chrome.runtime uses this envelope</span>
+<span class="k">Msg</span> = { type: <span class="s">string</span>, reqId: <span class="s">string</span>, payload: <span class="s">object</span> }
+
+<span class="c">// worker replies with</span>
+<span class="k">Reply</span> = { reqId: <span class="s">string</span>, ok: <span class="s">boolean</span>, data?: <span class="s">object</span>, error?: <span class="s">string</span> }</pre>
+
+  <table>
+    <thead><tr><th>Message type</th><th>From → To</th><th>Payload</th><th>Reply data</th><th>Owner</th></tr></thead>
+    <tbody>
+      <tr><td><code>USER_VOICE</code></td><td>Panel → Worker</td><td><code>{audioBase64, mime, targetLang?}</code></td><td>drives full loop → <code>BOT_REPLY</code></td><td>C→B</td></tr>
+      <tr><td><code>EXPLAIN_CLICK</code></td><td>Panel → Worker</td><td><code>{targetLang}</code></td><td>button path (no mic)</td><td>C→B</td></tr>
+      <tr><td><code>SCRAPE</code></td><td>Worker → Content</td><td><code>{}</code></td><td><code>PageDoc</code></td><td>A</td></tr>
+      <tr><td><code>STATE</code></td><td>Worker → Panel</td><td><code>{status}</code></td><td>listening·thinking·speaking·idle</td><td>B→C</td></tr>
+      <tr><td><code>BOT_REPLY</code></td><td>Worker → Panel</td><td><code>{transcript, replyText, audioBase64, lang}</code></td><td>panel renders + plays</td><td>B→C</td></tr>
+    </tbody>
+  </table>
+
+  <!-- ================= THE 3 SEAMS ================= -->
+  <h2><span class="n">01</span> The 3 seams — the exact APIs you stub for each other</h2>
+  <p class="lead">These three function signatures are the whole integration surface. On minute&nbsp;0 each person writes the
+  <b>stub</b> (returns fake data) so the other two are never blocked. Swap the stub for the real thing later — no other
+  file changes.</p>
+
+  <div class="seam" style="--accent:var(--saffron)">
+    <div class="cap">SEAM 1 · exposed by A · called by the worker</div>
+    <h3 style="margin-top:6px">scrapePage(tabId) → PageDoc <span class="owner oA">Builder A</span></h3>
+    <div class="io">
+      <div class="box in"><div class="t">input</div><pre style="border:0;background:none;padding:0"><span class="k">tabId</span>: number  <span class="c">// active tab</span></pre></div>
+      <div class="box out"><div class="t">output · PageDoc</div><pre style="border:0;background:none;padding:0">{
+  url:      <span class="s">string</span>,
+  title:    <span class="s">string</span>,
+  pageText: <span class="s">string</span>,   <span class="c">// cleaned</span>
+  headings: <span class="s">[{level, text}]</span>,
+  fields:   <span class="s">[{id,label,type,selector}]</span>, <span class="c">// (form step, later)</span>
+  charCount:<span class="s">number</span>
+}</pre></div>
+    </div>
+    <div class="files">stub → <b>return { pageText:"This scholarship needs income &lt; 2.5L...", ... }</b></div>
+  </div>
+
+  <div class="seam" style="--accent:var(--cyan)">
+    <div class="cap">SEAM 2 · exposed by B · called by the worker orchestrator</div>
+    <h3 style="margin-top:6px">understand(req) → UnderstandResult <span class="owner oB">Builder B</span></h3>
+    <div class="io">
+      <div class="box in"><div class="t">input · UnderstandRequest</div><pre style="border:0;background:none;padding:0">{
+  pageText: <span class="s">string</span>,   <span class="c">// from A</span>
+  lang:     <span class="k">Lang</span>,     <span class="c">// answer in this</span>
+  mode:     <span class="s">"explain"|"qa"</span>,
+  question？:<span class="s">string</span>,   <span class="c">// when qa</span>
+  history？: <span class="s">[{role,content}]</span>
+}</pre></div>
+      <div class="box out"><div class="t">output · UnderstandResult</div><pre style="border:0;background:none;padding:0">{
+  replyText: <span class="s">string</span>,  <span class="c">// already in lang</span>
+  keyPoints？:<span class="s">string[]</span>,
+  usedChars: <span class="s">number</span>
+}</pre></div>
+    </div>
+    <div class="files">stub → <b>return { replyText:"ಈ ಪುಟ ವಿದ್ಯಾರ್ಥಿ ವೇತನದ ಬಗ್ಗೆ...", usedChars:0 }</b></div>
+  </div>
+
+  <div class="seam" style="--accent:var(--violet)">
+    <div class="cap">SEAM 3 · exposed by C · called by the worker orchestrator</div>
+    <h3 style="margin-top:6px">stt(req) → {transcript,lang} &nbsp;·&nbsp; tts(req) → {audioBase64} <span class="owner oC">Builder C</span></h3>
+    <div class="io">
+      <div class="box in"><div class="t">stt input / tts input</div><pre style="border:0;background:none;padding:0"><span class="f">stt</span>({ audioBase64, mime, langHint？ })
+<span class="f">tts</span>({ text, lang, speaker？ })</pre></div>
+      <div class="box out"><div class="t">stt output / tts output</div><pre style="border:0;background:none;padding:0"><span class="f">stt</span> → { transcript:<span class="s">string</span>, lang:<span class="k">Lang</span> }
+<span class="f">tts</span> → { audioBase64:<span class="s">string</span>,
+        mime:<span class="s">"audio/wav"</span> }</pre></div>
+    </div>
+    <div class="files">stubs → stt returns {transcript:"explain this page in kannada", lang:"kn-IN"}; tts returns a 1-sec beep blob</div>
+  </div>
+
+  <!-- ================= THE STITCH ================= -->
+  <h2><span class="n">02</span> The stitch — orchestrator glue (worker, Builder B owns)</h2>
+  <p class="lead">This is where all three plug in. It is the <b>only</b> place that calls A, B, and C together. If everyone
+  honors the seams above, this function works the moment the stubs are swapped for real code.</p>
+  <pre><span class="c">// background/worker.js</span>
+<span class="k">async function</span> <span class="f">handleUserVoice</span>({ audioBase64, mime }, tabId) {
+  send(<span class="s">STATE</span>, { status: <span class="s">"listening"</span> })
+  <span class="k">const</span> { transcript, lang } = <span class="k">await</span> <span class="f">C.stt</span>({ audioBase64, mime })      <span class="c">// SEAM 3</span>
+
+  send(<span class="s">STATE</span>, { status: <span class="s">"thinking"</span> })
+  <span class="k">const</span> page = <span class="k">await</span> <span class="f">A.scrapePage</span>(tabId)                             <span class="c">// SEAM 1</span>
+  <span class="k">const</span> { replyText } = <span class="k">await</span> <span class="f">B.understand</span>({                          <span class="c">// SEAM 2</span>
+      pageText: page.pageText, lang, mode: <span class="s">"qa"</span>, question: transcript })
+
+  send(<span class="s">STATE</span>, { status: <span class="s">"speaking"</span> })
+  <span class="k">const</span> { audioBase64: out } = <span class="k">await</span> <span class="f">C.tts</span>({ text: replyText, lang })  <span class="c">// SEAM 3</span>
+
+  send(<span class="s">BOT_REPLY</span>, { transcript, replyText, audioBase64: out, lang })     <span class="c">// → Panel (C renders)</span>
+  send(<span class="s">STATE</span>, { status: <span class="s">"idle"</span> })
+}</pre>
+  <div class="note"><b>Read the data path:</b> C(audio→text) → A(scrape) → B(understand) → C(text→audio) → C(render). Each arrow is one seam. Nobody reaches inside anyone else's module.</div>
+
+  <!-- ================= PER-BUILDER LLD ================= -->
+  <h2><span class="n">03</span> Builder A — Extension shell + Scraping <span class="owner oA">saffron</span></h2>
+  <p class="lead"><b>Files:</b> <span class="files">manifest.json · background/worker.js (router + messaging skeleton) · content/reader.js · panel wiring</span></p>
+  <ol class="steps">
+    <li><b>manifest.json</b> — permissions: <code>activeTab</code>, <code>scripting</code>, <code>sidePanel</code>, <code>storage</code>; register worker, content script, side panel.</li>
+    <li><b>Message router</b> in worker: <code>chrome.runtime.onMessage</code> switch on <code>type</code>, dispatch by <code>reqId</code>, reply <code>{ok,data}</code>. (This is the backbone B &amp; C plug into.)</li>
+    <li><b>content/reader.js</b> — on <code>SCRAPE</code>: run <code>new Readability(document.cloneNode(true)).parse()</code> → map to <code>PageDoc</code>. Strip scripts/nav; cap <code>pageText</code> at ~8k chars for the LLM.</li>
+    <li><b>Field map</b> (used later for form-fill): <code>querySelectorAll('input,select,textarea')</code> → build stable selectors + nearest-label text.</li>
+  </ol>
+  <table><thead><tr><th>fn</th><th>in</th><th>out</th></tr></thead><tbody>
+    <tr><td><code>scrapePage(tabId)</code></td><td>tabId</td><td><code>PageDoc</code></td></tr>
+    <tr><td><code>route(msg,sender)</code></td><td><code>Msg</code></td><td><code>Reply</code></td></tr>
+  </tbody></table>
+
+  <h2><span class="n">04</span> Builder B — Brain / Understanding + sarvamClient <span class="owner oB">cyan</span></h2>
+  <p class="lead"><b>Files:</b> <span class="files">lib/sarvamClient.js · brain/understand.js · orchestrator in worker</span></p>
+  <ol class="steps">
+    <li><b>lib/sarvamClient.js</b> — one wrapper: <code>chat(messages,lang)</code>, <code>translate(text,to)</code> (+ later <code>stt</code>/<code>tts</code> C fills in). Reads key from a single config; centralize URLs. <b>Confirm exact Sarvam routes/payloads from docs first.</b></li>
+    <li><b>brain/understand.js</b> — build prompt: system = "explain webpage content simply for a low-literacy user; answer ONLY in {lang}; ground strictly in PAGE_TEXT." user = pageText + question. Call <code>chat()</code>.</li>
+    <li>If pageText not in target lang, rely on Sarvam-M's multilingual output (no separate Mayura call unless quality is poor).</li>
+    <li><b>Orchestrator</b> (the stitch in §02) — owns the STATE machine + sequencing.</li>
+  </ol>
+  <table><thead><tr><th>fn</th><th>in</th><th>out</th></tr></thead><tbody>
+    <tr><td><code>understand(req)</code></td><td><code>UnderstandRequest</code></td><td><code>UnderstandResult</code></td></tr>
+    <tr><td><code>sarvam.chat(msgs,lang)</code></td><td>messages[]</td><td>string</td></tr>
+  </tbody></table>
+
+  <h2><span class="n">05</span> Builder C — Voice (STT/TTS) + Panel UI <span class="owner oC">violet</span></h2>
+  <p class="lead"><b>Files:</b> <span class="files">panel/index.html · panel/panel.js · voice/stt.js · voice/tts.js</span></p>
+  <ol class="steps">
+    <li><b>Panel UI</b> — mic button, live transcript area, language picker, "Explain page" button, status pill (listening/thinking/speaking), audio element.</li>
+    <li><b>Mic capture</b> — <code>getUserMedia</code> + <code>MediaRecorder</code> → collect chunks → base64 → send <code>USER_VOICE</code> to worker.</li>
+    <li><b>voice/stt.js</b> — <code>stt({audioBase64,mime})</code> → POST to Sarvam Saarika via sarvamClient → <code>{transcript,lang}</code>.</li>
+    <li><b>voice/tts.js</b> — <code>tts({text,lang})</code> → Sarvam Bulbul → <code>{audioBase64}</code>; panel plays via <code>&lt;audio&gt;</code>.</li>
+    <li><b>On <code>BOT_REPLY</code></b> — render transcript + replyText bubbles, auto-play audio. <b>On <code>STATE</code></b> — update pill.</li>
+  </ol>
+  <table><thead><tr><th>fn</th><th>in</th><th>out</th></tr></thead><tbody>
+    <tr><td><code>stt(req)</code></td><td><code>{audioBase64,mime,langHint?}</code></td><td><code>{transcript,lang}</code></td></tr>
+    <tr><td><code>tts(req)</code></td><td><code>{text,lang,speaker?}</code></td><td><code>{audioBase64,mime}</code></td></tr>
+    <tr><td><code>onBotReply(data)</code></td><td><code>BOT_REPLY</code></td><td>DOM render + play</td></tr>
+  </tbody></table>
+
+  <!-- ================= INTEGRATION PLAN ================= -->
+  <h2><span class="n">06</span> How the pieces stick — integration order</h2>
+  <table><thead><tr><th>Step</th><th>Do</th><th>Proves</th></tr></thead><tbody>
+    <tr><td>1</td><td>A ships message router + <code>SCRAPE</code> returning real PageDoc; B &amp; C use <b>stubs</b>.</td><td>plumbing works end-to-end with fake AI</td></tr>
+    <tr><td>2</td><td>B swaps stub → real <code>understand()</code> (text-only, typed question).</td><td>"Explain this page" returns real text in Kannada</td></tr>
+    <tr><td>3</td><td>C swaps <code>tts()</code> real → reply is spoken.</td><td>text-out becomes voice-out</td></tr>
+    <tr><td>4</td><td>C swaps <code>stt()</code> real → mic drives the question.</td><td>full voice loop (§02) closes</td></tr>
+  </tbody></table>
+  <div class="note"><b>Golden rule:</b> never change a seam signature without telling the other two. The envelope, <code>PageDoc</code>, <code>UnderstandRequest/Result</code>, and the stt/tts shapes are frozen contracts. Everything behind them is each person's private business.</div>
+
+</div>
+</body>
+</html>

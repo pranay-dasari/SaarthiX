@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Saarthi — Low-Level Architecture</title>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#141b24; --panel-2:#1b2530; --line:#2a3743;
+    --ink:#e6edf3; --muted:#8b98a5; --dim:#5b6975;
+    --saffron:#ff9933; --green:#2ecc71; --cyan:#38bdf8; --violet:#a78bfa;
+    --amber:#fbbf24; --rose:#fb7185;
+    --mono:'SFMono-Regular',ui-monospace,'JetBrains Mono',Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Inter,Roboto,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.55;
+    background-image:radial-gradient(circle at 15% 0%,rgba(255,153,51,.06),transparent 40%),radial-gradient(circle at 85% 10%,rgba(56,189,248,.06),transparent 40%);}
+  .wrap{max-width:1180px;margin:0 auto;padding:40px 28px 90px}
+  header.top{border-bottom:1px solid var(--line);padding-bottom:24px;margin-bottom:36px}
+  .brand{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
+  .brand h1{font-size:34px;margin:0;letter-spacing:-.5px;
+    background:linear-gradient(90deg,var(--saffron),#fff 60%,var(--green));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .brand .tag{color:var(--muted);font-size:15px}
+  .meta{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px;font-family:var(--mono);font-size:12px}
+  .chip{background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:5px 12px;color:var(--muted)}
+  .chip b{color:var(--ink)}
+  h2{font-size:13px;letter-spacing:2px;text-transform:uppercase;color:var(--dim);
+    margin:54px 0 18px;padding-bottom:8px;border-bottom:1px dashed var(--line)}
+  h2 .n{color:var(--saffron);margin-right:8px}
+  p.lead{color:var(--muted);margin-top:-6px;max-width:820px}
+
+  /* ---- layered stack diagram ---- */
+  .stack{display:flex;flex-direction:column;gap:14px}
+  .layer{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px;position:relative}
+  .layer > .llabel{position:absolute;top:-9px;left:16px;background:var(--bg);padding:0 8px;font-family:var(--mono);font-size:11px;letter-spacing:1px;color:var(--dim);text-transform:uppercase}
+  .row{display:flex;gap:12px;flex-wrap:wrap}
+  .node{flex:1 1 200px;min-width:180px;background:var(--panel-2);border:1px solid var(--line);border-radius:10px;padding:13px 14px}
+  .node .h{display:flex;align-items:center;gap:8px;font-weight:600;font-size:14px}
+  .node .dot{width:9px;height:9px;border-radius:50%;flex:none}
+  .node .s{color:var(--muted);font-size:12.5px;margin-top:5px}
+  .node .svc{margin-top:9px;font-family:var(--mono);font-size:11px;color:var(--cyan)}
+  .node .own{margin-top:6px;font-family:var(--mono);font-size:11px}
+  .flowdown{text-align:center;color:var(--dim);font-size:18px;margin:-4px 0}
+
+  .d-saffron{background:var(--saffron)} .d-green{background:var(--green)}
+  .d-cyan{background:var(--cyan)} .d-violet{background:var(--violet)}
+  .d-amber{background:var(--amber)} .d-rose{background:var(--rose)}
+
+  .ownA{color:var(--saffron)} .ownB{color:var(--cyan)} .ownC{color:var(--violet)}
+
+  /* ---- module cards ---- */
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px;position:relative;overflow:hidden}
+  .card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--accent,var(--line))}
+  .card .num{font-family:var(--mono);font-size:11px;color:var(--dim)}
+  .card h3{margin:4px 0 2px;font-size:16px}
+  .card .who{font-family:var(--mono);font-size:11px;margin-bottom:10px}
+  .kv{font-size:13px;margin:7px 0;display:flex;gap:8px}
+  .kv .k{color:var(--dim);font-family:var(--mono);font-size:11px;min-width:64px;padding-top:2px}
+  .kv .v{color:var(--muted)}
+  .kv .v code{background:var(--panel-2);border:1px solid var(--line);border-radius:5px;padding:1px 6px;font-size:11.5px;color:var(--ink)}
+  .badge{display:inline-block;background:rgba(56,189,248,.12);border:1px solid rgba(56,189,248,.35);color:var(--cyan);
+    font-family:var(--mono);font-size:10.5px;border-radius:5px;padding:1px 6px;margin:2px 3px 0 0}
+
+  /* ---- sequence flows ---- */
+  .seq{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:20px;margin-bottom:16px}
+  .seq h4{margin:0 0 14px;font-size:14px;display:flex;align-items:center;gap:8px}
+  .steps{counter-reset:s;display:flex;flex-direction:column;gap:0}
+  .step{display:flex;gap:14px;padding:9px 0;border-bottom:1px dashed var(--line)}
+  .step:last-child{border-bottom:0}
+  .step .idx{counter-increment:s;font-family:var(--mono);font-size:11px;color:var(--bg);background:var(--muted);
+    width:22px;height:22px;border-radius:50%;display:grid;place-items:center;flex:none}
+  .step .idx::before{content:counter(s)}
+  .step .txt{font-size:13.5px;color:var(--muted)}
+  .step .txt b{color:var(--ink)} .step .txt .m{font-family:var(--mono);color:var(--cyan);font-size:12px}
+
+  /* ---- tables ---- */
+  table{width:100%;border-collapse:collapse;font-size:13px;background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  th,td{text-align:left;padding:11px 13px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{background:var(--panel-2);color:var(--dim);font-family:var(--mono);font-size:11px;letter-spacing:1px;text-transform:uppercase}
+  tr:last-child td{border-bottom:0}
+  td code{background:var(--panel-2);border:1px solid var(--line);border-radius:5px;padding:1px 6px;font-size:11.5px;color:var(--cyan)}
+  .t-A{color:var(--saffron)} .t-B{color:var(--cyan)} .t-C{color:var(--violet)}
+
+  /* ---- callout ---- */
+  .callout{border:1px solid rgba(46,204,113,.35);background:rgba(46,204,113,.07);border-radius:12px;padding:18px 20px}
+  .callout h4{margin:0 0 8px;color:var(--green);font-size:15px}
+  .callout p{margin:8px 0;color:var(--muted);font-size:13.5px}
+  .callout .verdict{color:var(--ink);font-weight:600}
+  .pill{font-family:var(--mono);font-size:11px;border-radius:6px;padding:2px 7px;border:1px solid var(--line);background:var(--panel-2);color:var(--muted)}
+
+  /* ---- swimlanes ---- */
+  .lanes{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+  .lane{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;border-top:3px solid var(--top)}
+  .lane h4{margin:0 0 3px;font-size:15px}
+  .lane .role{font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:12px}
+  .lane ul{margin:0;padding-left:16px}
+  .lane li{font-size:13px;color:var(--muted);margin:6px 0}
+  .lane li b{color:var(--ink)}
+
+  /* ---- timeline ---- */
+  .tl{position:relative;padding-left:26px}
+  .tl::before{content:"";position:absolute;left:7px;top:4px;bottom:4px;width:2px;background:var(--line)}
+  .ms{position:relative;padding:0 0 20px}
+  .ms::before{content:"";position:absolute;left:-23px;top:4px;width:14px;height:14px;border-radius:50%;
+    background:var(--bg);border:3px solid var(--saffron)}
+  .ms .time{font-family:var(--mono);font-size:12px;color:var(--saffron)}
+  .ms h4{margin:2px 0 4px;font-size:15px}
+  .ms p{margin:0;color:var(--muted);font-size:13px}
+  .ms .gate{font-family:var(--mono);font-size:11px;color:var(--green);margin-top:5px}
+
+  footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--line);color:var(--dim);font-size:12px;font-family:var(--mono)}
+  .legend{display:flex;gap:18px;flex-wrap:wrap;margin:12px 0 0;font-family:var(--mono);font-size:12px;color:var(--muted)}
+  .legend span{display:flex;align-items:center;gap:7px}
+  @media(max-width:760px){.lanes{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div class="brand">
+      <h1>सारथी · Saarthi</h1>
+      <span class="tag">Voice-first, multilingual AI co-pilot for any webpage</span>
+    </div>
+    <div class="meta">
+      <span class="chip"><b>Low-Level Architecture</b> · v1</span>
+      <span class="chip">Surface: <b>Chrome Extension (MV3)</b></span>
+      <span class="chip">AI stack: <b>Sarvam AI</b></span>
+      <span class="chip">Team: <b>3 builders</b></span>
+      <span class="chip">Window: <b>11:00 → 16:00</b></span>
+    </div>
+    <div class="legend">
+      <span><i class="node dot ownA" style="width:11px;height:11px;background:var(--saffron)"></i> A — Extension &amp; DOM</span>
+      <span><i class="node dot" style="width:11px;height:11px;background:var(--cyan)"></i> B — AI Core (Sarvam)</span>
+      <span><i class="node dot" style="width:11px;height:11px;background:var(--violet)"></i> C — Voice · UI · Memory</span>
+    </div>
+  </header>
+
+  <!-- ============ SYSTEM OVERVIEW ============ -->
+  <h2><span class="n">01</span> System Overview — layered &amp; modular</h2>
+  <p class="lead">Each box is an independently buildable module with a clean contract (typed input → typed output). The
+  <b>Orchestrator</b> in the background service worker is the only component that talks to every module, so the three
+  builders can work against stubs in parallel.</p>
+
+  <div class="stack">
+
+    <div class="layer">
+      <span class="llabel">Presentation — Side Panel (React/vanilla)</span>
+      <div class="row">
+        <div class="node"><div class="h"><span class="dot d-violet"></span>Chat &amp; Voice UI</div>
+          <div class="s">Mic button, live transcript, language picker, "Explain" / "Fill form" actions, TTS playback.</div>
+          <div class="own ownC">owner · C</div></div>
+        <div class="node"><div class="h"><span class="dot d-violet"></span>Consent &amp; PIN gate</div>
+          <div class="s">Unlocks encrypted memory; shows what data is stored/used before any autofill.</div>
+          <div class="own ownC">owner · C</div></div>
+      </div>
+    </div>
+    <div class="flowdown">▲ messages ▼</div>
+
+    <div class="layer">
+      <span class="llabel">Control — Background Service Worker</span>
+      <div class="row">
+        <div class="node" style="flex-basis:100%"><div class="h"><span class="dot d-amber"></span>Orchestrator / Agent Loop</div>
+          <div class="s">Routes intents (explain · ask · fill), holds conversation state, calls Sarvam-M with tools, sequences STT→LLM→TTS, mediates memory reads/writes. Single source of truth.</div>
+          <div class="own ownB">owner · B</div></div>
+      </div>
+    </div>
+    <div class="flowdown">▲ module calls ▼</div>
+
+    <div class="layer">
+      <span class="llabel">Capabilities — the 6 modules</span>
+      <div class="row">
+        <div class="node"><div class="h"><span class="dot d-saffron"></span>1 · Page Reader</div>
+          <div class="s">Scrapes DOM → clean structured text + element map.</div>
+          <div class="own ownA">owner · A</div></div>
+        <div class="node"><div class="h"><span class="dot d-cyan"></span>2 · Understanding</div>
+          <div class="s">Summarize &amp; explain scraped data in user's language.</div>
+          <div class="svc">Sarvam-M · Mayura</div><div class="own ownB">owner · B</div></div>
+        <div class="node"><div class="h"><span class="dot d-green"></span>3 · Talk Back (TTS)</div>
+          <div class="s">Text → natural Indian-language speech.</div>
+          <div class="svc">Bulbul (TTS)</div><div class="own ownC">owner · C</div></div>
+        <div class="node"><div class="h"><span class="dot d-green"></span>4 · Listen (STT)</div>
+          <div class="s">Mic audio → transcript (+ translate).</div>
+          <div class="svc">Saarika · Saaras</div><div class="own ownC">owner · C</div></div>
+        <div class="node"><div class="h"><span class="dot d-rose"></span>5 · Encrypted Memory</div>
+          <div class="s">Local vault of user profile &amp; prefs.</div>
+          <div class="svc">Web Crypto · IndexedDB</div><div class="own ownC">owner · C</div></div>
+        <div class="node"><div class="h"><span class="dot d-saffron"></span>6 · Form Engine</div>
+          <div class="s">Detect fields, map to answers, inject values.</div>
+          <div class="svc">Sarvam-M (mapping)</div><div class="own ownA ownB">A + B</div></div>
+      </div>
+    </div>
+    <div class="flowdown">▲ HTTPS ▼</div>
+
+    <div class="layer">
+      <span class="llabel">External &amp; Storage</span>
+      <div class="row">
+        <div class="node"><div class="h"><span class="dot d-cyan"></span>Sarvam AI APIs</div>
+          <div class="s">Saarika (STT) · Bulbul (TTS) · Mayura (translate) · Sarvam-M (chat/agent). One API key, proxied through the worker.</div>
+          <div class="svc">api.sarvam.ai</div></div>
+        <div class="node"><div class="h"><span class="dot d-rose"></span>Local Encrypted Store</div>
+          <div class="s">IndexedDB blob, AES-GCM encrypted. Never leaves the device.</div>
+          <div class="svc">chrome.storage / IndexedDB</div></div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ============ MODULE CONTRACTS ============ -->
+  <h2><span class="n">02</span> Module contracts — build each in isolation</h2>
+  <div class="grid">
+
+    <div class="card" style="--accent:var(--saffron)">
+      <div class="num">MODULE 01</div><h3>Page Reader</h3>
+      <div class="who ownA">Owner · A (content script)</div>
+      <div class="kv"><span class="k">does</span><span class="v">Reads the active page's DOM, strips nav/ads/scripts, returns readable text + a stable map of interactive elements.</span></div>
+      <div class="kv"><span class="k">in</span><span class="v"><code>DOMSnapshot request</code></span></div>
+      <div class="kv"><span class="k">out</span><span class="v"><code>{ pageText, headings[], fields[]{id,label,type,selector} }</code></span></div>
+      <div class="kv"><span class="k">tech</span><span class="v"><span class="badge">Readability.js</span><span class="badge">MutationObserver</span><span class="badge">unique selectors</span></span></div>
+    </div>
+
+    <div class="card" style="--accent:var(--cyan)">
+      <div class="num">MODULE 02</div><h3>Understanding</h3>
+      <div class="who ownB">Owner · B (AI core)</div>
+      <div class="kv"><span class="k">does</span><span class="v">Turns raw page text into a short, plain explanation in the user's language; answers follow-up questions grounded in the page.</span></div>
+      <div class="kv"><span class="k">in</span><span class="v"><code>{ pageText, lang, question? }</code></span></div>
+      <div class="kv"><span class="k">out</span><span class="v"><code>{ explanation, keyPoints[] }</code></span></div>
+      <div class="kv"><span class="k">sarvam</span><span class="v"><span class="badge">Sarvam-M /chat</span><span class="badge">Mayura translate</span></span></div>
+    </div>
+
+    <div class="card" style="--accent:var(--green)">
+      <div class="num">MODULE 03</div><h3>Talk Back — TTS</h3>
+      <div class="who ownC">Owner · C (voice)</div>
+      <div class="kv"><span class="k">does</span><span class="v">Converts assistant text to natural speech in the chosen Indian language and streams audio to the panel.</span></div>
+      <div class="kv"><span class="k">in</span><span class="v"><code>{ text, lang, voice }</code></span></div>
+      <div class="kv"><span class="k">out</span><span class="v"><code>audio (wav/base64) → play</code></span></div>
+      <div class="kv"><span class="k">sarvam</span><span class="v"><span class="badge">Bulbul /text-to-speech</span></span></div>
+    </div>
+
+    <div class="card" style="--accent:var(--green)">
+      <div class="num">MODULE 04</div><h3>Listen — STT</h3>
+      <div class="who ownC">Owner · C (voice)</div>
+      <div class="kv"><span class="k">does</span><span class="v">Captures mic audio, returns transcript. Optionally speech→English translate for the LLM via Saaras.</span></div>
+      <div class="kv"><span class="k">in</span><span class="v"><code>audio blob</code></span></div>
+      <div class="kv"><span class="k">out</span><span class="v"><code>{ transcript, detectedLang }</code></span></div>
+      <div class="kv"><span class="k">sarvam</span><span class="v"><span class="badge">Saarika /speech-to-text</span><span class="badge">Saaras translate</span></span></div>
+    </div>
+
+    <div class="card" style="--accent:var(--rose)">
+      <div class="num">MODULE 05</div><h3>Encrypted Memory</h3>
+      <div class="who ownC">Owner · C (storage)</div>
+      <div class="kv"><span class="k">does</span><span class="v">Persists user profile (name, income, address, Aadhaar-style fields) &amp; prefs, encrypted at rest. Unlocked by a PIN.</span></div>
+      <div class="kv"><span class="k">in</span><span class="v"><code>get(key) · set(key,val)</code></span></div>
+      <div class="kv"><span class="k">out</span><span class="v"><code>decrypted value (in-memory only)</code></span></div>
+      <div class="kv"><span class="k">tech</span><span class="v"><span class="badge">AES-GCM</span><span class="badge">PBKDF2</span><span class="badge">IndexedDB</span></span></div>
+    </div>
+
+    <div class="card" style="--accent:var(--saffron)">
+      <div class="num">MODULE 06</div><h3>Form Engine</h3>
+      <div class="who"><span class="ownA">A</span> + <span class="ownB">B</span> (DOM + mapping)</div>
+      <div class="kv"><span class="k">does</span><span class="v">Matches detected fields to memory + conversation answers; asks the user for anything missing; injects &amp; fires events so the site accepts the values.</span></div>
+      <div class="kv"><span class="k">in</span><span class="v"><code>{ fields[], memory, answers }</code></span></div>
+      <div class="kv"><span class="k">out</span><span class="v"><code>{ fills[]{selector,value}, missing[] }</code></span></div>
+      <div class="kv"><span class="k">sarvam</span><span class="v"><span class="badge">Sarvam-M field→value mapping</span></span></div>
+    </div>
+
+  </div>
+
+  <!-- ============ DATA FLOWS ============ -->
+  <h2><span class="n">03</span> Runtime data flows</h2>
+
+  <div class="seq">
+    <h4>🗣️ Flow A — "Explain this page in Kannada"</h4>
+    <div class="steps">
+      <div class="step"><span class="idx"></span><span class="txt">User taps mic, speaks. <span class="m">Module 4 · Saarika</span> → transcript + detected language.</span></div>
+      <div class="step"><span class="idx"></span><span class="txt">Orchestrator asks <b>Module 1</b> to scrape the active tab → clean <span class="m">pageText</span>.</span></div>
+      <div class="step"><span class="idx"></span><span class="txt"><b>Module 2 · Sarvam-M</b> summarizes pageText, output constrained to <span class="m">lang=kn-IN</span>.</span></div>
+      <div class="step"><span class="idx"></span><span class="txt"><b>Module 3 · Bulbul</b> speaks the explanation; transcript also shown in the panel.</span></div>
+    </div>
+  </div>
+
+  <div class="seq">
+    <h4>📝 Flow B — "Help me fill this form"</h4>
+    <div class="steps">
+      <div class="step"><span class="idx"></span><span class="txt"><b>Module 1</b> returns the <span class="m">fields[]</span> map (label, type, selector).</span></div>
+      <div class="step"><span class="idx"></span><span class="txt"><b>Module 6 + Sarvam-M</b> maps each field to a value from <b>Module 5 (memory)</b>; flags <span class="m">missing[]</span>.</span></div>
+      <div class="step"><span class="idx"></span><span class="txt">For each missing field, Orchestrator asks by voice (Bulbul) → user answers (Saarika) → stored to memory.</span></div>
+      <div class="step"><span class="idx"></span><span class="txt"><b>Module 6</b> injects values into the DOM and fires <span class="m">input/change</span> events so the site validates them.</span></div>
+      <div class="step"><span class="idx"></span><span class="txt">Panel shows a review list; user confirms before anything is submitted.</span></div>
+    </div>
+  </div>
+
+  <!-- ============ MEMORY DECISION ============ -->
+  <h2><span class="n">04</span> Memory decision — local vs cloud</h2>
+  <div class="callout">
+    <h4>✅ Recommendation: Local, encrypted vault <span class="pill">no backend</span></h4>
+    <p class="verdict">Store the user profile in IndexedDB, encrypted with the browser's Web Crypto API (AES-256-GCM), key derived from a user PIN via PBKDF2. Data never leaves the device.</p>
+    <p><b>Why local wins for this build:</b> ① The data is sensitive (income, Aadhaar-style, bank) — "it never leaves your phone" is a strong pitch &amp; trust story. ② Zero backend = zero auth/server work in a 5-hour window. ③ Lower latency, works offline for reads. ④ Encryption is ~40 lines with native APIs.</p>
+    <p><b>Choose cloud only if</b> you need cross-device sync or a shared family profile — then use <span class="pill">Supabase/Firebase</span> with per-user row encryption. Not worth it today.</p>
+    <p><b>Hackathon path:</b> ship local encrypted now; keep the memory contract (<code>get/set</code>) storage-agnostic so a cloud adapter can drop in later without touching other modules.</p>
+  </div>
+
+  <!-- ============ SARVAM MAP ============ -->
+  <h2><span class="n">05</span> Sarvam service map</h2>
+  <table>
+    <thead><tr><th>Need</th><th>Sarvam service</th><th>Endpoint (verify in docs)</th><th>Used by</th></tr></thead>
+    <tbody>
+      <tr><td>Listen (speech → text)</td><td>Saarika (STT)</td><td><code>/speech-to-text</code></td><td>Module 4</td></tr>
+      <tr><td>Listen + translate to English</td><td>Saaras (speech-translate)</td><td><code>/speech-to-text-translate</code></td><td>Module 4</td></tr>
+      <tr><td>Understand / reason / map form</td><td>Sarvam-M (LLM)</td><td><code>/v1/chat/completions</code></td><td>Modules 2 &amp; 6</td></tr>
+      <tr><td>Translate text between Indian langs</td><td>Mayura</td><td><code>/translate</code></td><td>Module 2</td></tr>
+      <tr><td>Talk back (text → speech)</td><td>Bulbul (TTS)</td><td><code>/text-to-speech</code></td><td>Module 3</td></tr>
+      <tr><td>Transliterate / detect language</td><td>Text utils</td><td><code>/transliterate</code>, <code>/language-identification</code></td><td>Orchestrator</td></tr>
+    </tbody>
+  </table>
+  <p class="lead" style="margin-top:12px;font-size:12.5px">⚠️ Endpoint paths are indicative — <b>B confirms exact routes &amp; payloads from Sarvam docs first thing</b> and centralizes them in one <code>sarvamClient.js</code> so keys/URLs live in one place.</p>
+
+  <!-- ============ 3-PERSON SPLIT ============ -->
+  <h2><span class="n">06</span> Who builds what — parallel swimlanes</h2>
+  <div class="lanes">
+    <div class="lane" style="--top:var(--saffron)">
+      <h4 class="t-A">Builder A</h4>
+      <div class="role">Extension shell &amp; DOM</div>
+      <ul>
+        <li><b>Scaffold</b> MV3: manifest, background worker, content script, side panel wiring.</li>
+        <li><b>Module 1</b> Page Reader — scrape + clean + field map.</li>
+        <li><b>Module 6</b> (DOM half) — inject values, fire events, review overlay.</li>
+        <li>Message bus contracts between content ↔ worker ↔ panel.</li>
+      </ul>
+    </div>
+    <div class="lane" style="--top:var(--cyan)">
+      <h4 class="t-B">Builder B</h4>
+      <div class="role">AI core — Sarvam</div>
+      <ul>
+        <li><b>sarvamClient.js</b> — one wrapper for STT/TTS/LLM/translate + key handling.</li>
+        <li><b>Module 2</b> Understanding — summarize/explain prompts, language control.</li>
+        <li><b>Orchestrator</b> intent routing + agent loop + tool calls.</li>
+        <li><b>Module 6</b> (mapping half) — field→value LLM logic + missing detection.</li>
+      </ul>
+    </div>
+    <div class="lane" style="--top:var(--violet)">
+      <h4 class="t-C">Builder C</h4>
+      <div class="role">Voice · UI · Memory</div>
+      <ul>
+        <li><b>Side panel UI</b> — mic, transcript, language picker, actions.</li>
+        <li><b>Modules 3 &amp; 4</b> — Bulbul TTS + Saarika STT, mic capture, playback.</li>
+        <li><b>Module 5</b> — encrypted vault (AES-GCM + PBKDF2 + IndexedDB) &amp; PIN gate.</li>
+        <li>Consent/review screens before autofill &amp; submit.</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ============ MILESTONES ============ -->
+  <h2><span class="n">07</span> Milestones &amp; timeline · 11:00 → 16:00</h2>
+  <div class="tl">
+    <div class="ms"><div class="time">11:00 – 11:30 · M0</div><h4>Foundations &amp; contracts</h4>
+      <p>A scaffolds MV3 &amp; loads it. B stands up <code>sarvamClient.js</code> with a working "hello" LLM call. C bootstraps panel + records mic. Agree on message shapes.</p>
+      <div class="gate">GATE ✓ extension loads · one Sarvam call succeeds · mic captures audio</div></div>
+
+    <div class="ms"><div class="time">11:30 – 12:30 · M1</div><h4>Read &amp; Understand</h4>
+      <p>Module 1 scrapes a real gov/scholarship page → Module 2 returns a plain-language explanation in a chosen Indian language, shown as text in the panel.</p>
+      <div class="gate">GATE ✓ "Explain this page" works end-to-end (text)</div></div>
+
+    <div class="ms"><div class="time">12:30 – 13:30 · M2</div><h4>Voice loop closed</h4>
+      <p>Saarika (STT) + Bulbul (TTS) wired into the orchestrator: speak a question → hear the explanation back. Language auto-detected.</p>
+      <div class="gate">GATE ✓ full voice-in → voice-out on Flow A</div></div>
+
+    <div class="ms"><div class="time">13:30 – 14:00 · M3</div><h4>Encrypted memory</h4>
+      <p>Module 5 live: PIN unlock, save/read a user profile, encrypted at rest. Verify ciphertext in IndexedDB.</p>
+      <div class="gate">GATE ✓ profile persists &amp; is unreadable without PIN</div></div>
+
+    <div class="ms"><div class="time">14:00 – 15:15 · M4</div><h4>Conversational form fill</h4>
+      <p>Module 6: detect fields → map from memory → ask for missing by voice → inject &amp; fire events → review before submit.</p>
+      <div class="gate">GATE ✓ a real form fills itself from a spoken conversation</div></div>
+
+    <div class="ms"><div class="time">15:15 – 15:45 · M5</div><h4>Polish &amp; happy path</h4>
+      <p>Style the panel, lock the "Lakshmi from Mysuru" demo script, handle the top 2 failure cases (no mic, empty page).</p>
+      <div class="gate">GATE ✓ demo runs clean twice in a row</div></div>
+
+    <div class="ms" style="padding-bottom:0"><div class="time">15:45 – 16:00 · M6</div><h4>Buffer &amp; pitch</h4>
+      <p>Freeze code. Rehearse the 90-second pitch + live demo. Screen-record a backup.</p>
+      <div class="gate">GATE ✓ backup recording captured</div></div>
+  </div>
+
+  <footer>
+    Saarthi · low-level architecture v1 · generated for the 11:00–16:00 build · AI: Sarvam (Saarika · Bulbul · Mayura · Sarvam-M) · storage: local AES-GCM
+  </footer>
+
+</div>
+</body>
+</html>

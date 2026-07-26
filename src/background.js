@@ -126,13 +126,25 @@ function safePost(port, payload) {
   }
 }
 
+function stripDataUrl(audioBase64) {
+  return (audioBase64 || "").replace(/^data:audio\/[a-z0-9.+-]+;base64,/i, "").replace(/\s+/g, "");
+}
+
+function inferAudioMimeType(audioBase64) {
+  const clean = stripDataUrl(audioBase64);
+  if (clean.startsWith("UklGR")) return "audio/wav";
+  if (clean.startsWith("SUQz") || clean.startsWith("//")) return "audio/mpeg";
+  if (clean.startsWith("T2dnUw")) return "audio/ogg";
+  return "audio/mpeg";
+}
+
 // Synthesize the answer sentence-by-sentence and stream each finished clip back
 // as soon as it's ready, in order. All syntheses are fired concurrently so the
 // first (short) sentence returns fast and playback starts while the rest are
 // still being generated — cutting perceived latency to time-to-first-sentence.
 async function streamSpeech(port, answerText, languageCode) {
   const chunks = chunkTextForSpeech(answerText);
-  if (!chunks.length) return;
+  if (!chunks.length) throw new Error("TTS failed: answer was empty");
 
   const jobs = chunks.map((chunk) =>
     synthesizeSpeech(chunk, languageCode).then(
@@ -141,14 +153,20 @@ async function streamSpeech(port, answerText, languageCode) {
     )
   );
 
+  let sentChunks = 0;
   for (const job of jobs) {
     const { audioBase64, error } = await job;
     if (error) {
       console.error("SaarthiX TTS chunk failed:", error.message);
       continue;
     }
-    if (!safePost(port, { type: "audio-chunk", base64: audioBase64 })) return;
+    const cleanBase64 = stripDataUrl(audioBase64);
+    sentChunks += 1;
+    if (!safePost(port, { type: "audio-chunk", base64: cleanBase64, mimeType: inferAudioMimeType(audioBase64) })) return sentChunks;
   }
+
+  if (!sentChunks) throw new Error("TTS failed: no audio could be generated");
+  return sentChunks;
 }
 
 async function handleVoiceQuery(port, message) {

@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Saarthi Mascot — state preview</title>
+    <link rel="stylesheet" href="mascot.css" />
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      }
+      body {
+        margin: 0;
+        padding: 28px;
+        background: #f4f5fb;
+        color: #1b2140;
+      }
+      h1 { font-size: 20px; margin: 0 0 4px; }
+      p.sub { margin: 0 0 20px; color: #5a6180; font-size: 13px; }
+
+      .controls {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 16px;
+        padding: 14px 16px;
+        background: #fff;
+        border-radius: 12px;
+        box-shadow: 0 2px 10px rgba(20, 26, 61, 0.08);
+        margin-bottom: 24px;
+      }
+      .controls label { font-size: 13px; font-weight: 600; }
+      .controls .hint { font-size: 12px; color: #7b81a0; }
+      input[type="range"] { width: 200px; }
+
+      .grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 18px;
+        max-width: 760px;
+      }
+      .card {
+        background: #fff;
+        border-radius: 14px;
+        padding: 18px 24px;
+        box-shadow: 0 2px 12px rgba(20, 26, 61, 0.08);
+      }
+      .card h2 {
+        font-size: 13px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: #6b7290;
+        margin: 0 0 14px;
+      }
+      .sizes {
+        display: flex;
+        align-items: flex-end;
+        justify-content: flex-start;
+        gap: 40px;
+        padding: 12px 0;
+      }
+      .slot { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+      .slot .stage { display: grid; place-items: center; }
+      .slot .cap { font-size: 11px; color: #9298b5; }
+      .status-text {
+        margin-top: 12px;
+        font-size: 12px;
+        color: #4a63e8;
+        font-weight: 600;
+        min-height: 16px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Saarthi Mascot</h1>
+    <p class="sub">
+      Every state at 80px, 150px and 300px. Drag the volume slider to feed the
+      listening &amp; speaking mascots a simulated mic level. Toggle
+      <em>prefers-reduced-motion</em> in your OS/devtools to verify the reduced
+      motion behaviour.
+    </p>
+
+    <div class="controls">
+      <div>
+        <label for="vol">Simulated audioVolume</label>
+        <div class="hint">clamped 0–1, drives sound-wave scale</div>
+      </div>
+      <input id="vol" type="range" min="0" max="1" step="0.01" value="0.4" />
+      <span id="volval" class="hint">0.40</span>
+      <button id="pulse" type="button">Auto-pulse volume</button>
+      <button id="replay" type="button">Replay success / error</button>
+    </div>
+
+    <div id="grid" class="grid"></div>
+
+    <!-- Classic script: defines window.createSaarthiMascot (no build step). -->
+    <script src="mascot.js"></script>
+    <script>
+      const STATES = window.SAARTHI_MASCOT_STATES;
+      const SIZES = [80, 150, 300];
+      const LABELS = {
+        idle: "Idle · ready",
+        listening: "Listening",
+        thinking: "Thinking",
+        speaking: "Speaking",
+        success: "Success",
+        error: "Error",
+        disabled: "Disabled"
+      };
+
+      const grid = document.getElementById("grid");
+      const mascots = []; // { state, instance }
+
+      STATES.forEach((state) => {
+        const card = document.createElement("div");
+        card.className = "card";
+
+        const h2 = document.createElement("h2");
+        h2.textContent = LABELS[state] || state;
+        card.appendChild(h2);
+
+        const sizes = document.createElement("div");
+        sizes.className = "sizes";
+
+        SIZES.forEach((size) => {
+          const slot = document.createElement("div");
+          slot.className = "slot";
+
+          const stage = document.createElement("div");
+          stage.className = "stage";
+          stage.style.width = size + "px";
+          stage.style.height = size + "px";
+
+          const m = createSaarthiMascot({ state, size, ariaLabel: LABELS[state] });
+          stage.appendChild(m.el);
+          mascots.push({ state, instance: m });
+
+          const cap = document.createElement("div");
+          cap.className = "cap";
+          cap.textContent = size + "px";
+
+          slot.appendChild(stage);
+          slot.appendChild(cap);
+          sizes.appendChild(slot);
+        });
+
+        card.appendChild(sizes);
+
+        const st = document.createElement("div");
+        st.className = "status-text";
+        st.textContent =
+          state === "listening" || state === "error" || state === "disabled"
+            ? LABELS[state]
+            : " ";
+        card.appendChild(st);
+
+        grid.appendChild(card);
+      });
+
+      // Volume control -> feed every listening/speaking mascot.
+      const vol = document.getElementById("vol");
+      const volval = document.getElementById("volval");
+      function applyVolume(v) {
+        volval.textContent = Number(v).toFixed(2);
+        mascots.forEach(({ state, instance }) => {
+          if (state === "listening" || state === "speaking") instance.setVolume(v);
+        });
+      }
+      vol.addEventListener("input", () => applyVolume(vol.value));
+      applyVolume(vol.value);
+
+      // Auto-pulse: a gentle sine so you can watch the waves breathe with "audio".
+      let pulsing = false;
+      let raf = null;
+      document.getElementById("pulse").addEventListener("click", () => {
+        pulsing = !pulsing;
+        if (pulsing) {
+          const start = performance.now();
+          const loop = (t) => {
+            const v = 0.5 + 0.5 * Math.sin((t - start) / 260);
+            vol.value = String(v);
+            applyVolume(v);
+            if (pulsing) raf = requestAnimationFrame(loop);
+          };
+          raf = requestAnimationFrame(loop);
+        } else if (raf) {
+          cancelAnimationFrame(raf);
+        }
+      });
+
+      // Replay the one-shot success/error beats.
+      document.getElementById("replay").addEventListener("click", () => {
+        mascots.forEach(({ state, instance }) => {
+          if (state === "success" || state === "error") {
+            instance.setState("idle");
+            requestAnimationFrame(() => instance.setState(state));
+          }
+        });
+      });
+    </script>
+  </body>
+</html>
