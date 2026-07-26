@@ -7,31 +7,22 @@
 import { SARVAM_API_KEY, SARVAM_API_BASE } from "./config.js";
 
 const MIN_PAGE_TEXT_LENGTH = 40;
-const MAX_PAGE_TEXT_LENGTH = 12000; // keep huge pages from blowing the context and inviting hallucination
+const MAX_PAGE_TEXT_LENGTH = 12000;
 const REQUEST_TIMEOUT_MS = 10000;
 const MAX_HISTORY_TURNS = 3;
 
-// Longer pages carry more ground to cover, so allow a bit more room to
-// answer instead of forcing the same 2-3 sentences a short page gets.
 function responseBudgetFor(pageTextLength) {
   if (pageTextLength < 800) return { sentences: "1-2 short spoken sentences", maxTokens: 80 };
   if (pageTextLength < 4000) return { sentences: "2-3 short spoken sentences", maxTokens: 130 };
   return { sentences: "3-5 short spoken sentences", maxTokens: 200 };
 }
 
-export async function getAnswer(pageText, question, languageCode, history = []) {
-  if (!pageText || pageText.trim().length < MIN_PAGE_TEXT_LENGTH) {
-    return "I couldn't read this page, so I can't answer that.";
-  }
+async function readError(res) {
+  const body = await res.text();
+  return body ? `${res.status} ${body}` : `${res.status}`;
+}
 
-  const truncatedPageText = pageText.slice(0, MAX_PAGE_TEXT_LENGTH);
-  const { sentences, maxTokens } = responseBudgetFor(truncatedPageText.length);
-  const recentHistory = history.slice(-MAX_HISTORY_TURNS);
-  const historyMessages = recentHistory.flatMap(({ question, answer }) => [
-    { role: "user", content: question },
-    { role: "assistant", content: answer }
-  ]);
-
+async function chatCompletion({ messages, maxTokens }) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
@@ -43,32 +34,92 @@ export async function getAnswer(pageText, question, languageCode, history = []) 
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        model: "sarvam-30b", // faster/cheaper; use "sarvam-105b" if quality matters more than latency
+        model: "sarvam-30b",
         max_tokens: maxTokens,
-        // sarvam-30b is a reasoning model with thinking on by default; reasoning
-        // tokens eat into max_tokens and can starve the actual answer (finish_reason
-        // "length" with content: null). Disable thinking for this latency-sensitive path.
         reasoning_effort: null,
-        messages: [
-          {
-            role: "system",
-            content: `You are a concise voice assistant. Answer using only the given page content, in ${sentences}. If the page content doesn't contain the answer, say so instead of guessing. Respond in ${languageCode || "the same language as the question"}.\n\nPage content:\n${truncatedPageText}`
-          },
-          ...historyMessages,
-          { role: "user", content: question }
-        ]
+        messages
       }),
       signal: controller.signal
     });
-    if (!res.ok) throw new Error(`Sarvam-M failed: ${res.status}`);
+
+    if (!res.ok) throw new Error(`Sarvam-M failed: ${await readError(res)}`);
+
     const data = await res.json();
-    return data.choices[0].message.content;
+    console.log("SaarthiX Brain: raw response", data);
+
+    const content = data.choices?.[0]?.message?.content;
+    if (!content) throw new Error(`Sarvam-M failed: empty answer. Raw response: ${JSON.stringify(data)}`);
+    return content;
   } catch (err) {
-    if (err.name === "AbortError") {
-      throw new Error("Sarvam-M timed out");
-    }
+    if (err.name === "AbortError") throw new Error("Sarvam-M timed out");
     throw err;
   } finally {
     clearTimeout(timeout);
   }
+}
+
+function parseJsonObject(text) {
+  try {
+    return JSON.parse(text);
+  } catch (_) {
+    const match = text.match(/\{[\s\S]*\}/);
+    if (!match) return null;
+    try {
+      return JSON.parse(match[0]);
+    } catch (_) {
+      return null;
+    }
+  }
+}
+
+export async function choosePageTool(question, pageText, history = [], toolResults = []) {
+  const toolContext = toolResults.map((result, index) => `Tool result ${index + 1}: ${result.tool}\n${result.text}`).join("\n\n");
+  const recentHistory = history.slice(-MAX_HISTORY_TURNS).map(({ question, answer }) => `Q: ${question}\nA: ${answer}`).join("\n");
+
+  const content = await chatCompletion({
+    maxTokens: 120,
+    messages: [
+      {
+        role: "system",
+        content: `You are deciding whether a webpage voice agent needs one browser scraping tool before answering. Reply with ONLY valid JSON. Available tools:\n- NONE: enough context already\n- SCRAPE_PAGE: get full readable page text\n- GET_HEADINGS: list page headings\n- SCRAPE_SECTION: get text near a heading/section matching a query\n- FIND_TEXT: find snippets containing a query\n\nJSON shape: {"tool":"NONE"} or {"tool":"SCRAPE_SECTION","query":"pricing"}. Prefer NONE if current context is enough. Prefer SCRAPE_SECTION/FIND_TEXT when the user asks about a specific section/topic.`
+      },
+      {
+        role: "user",
+        content: `Question: ${question}\n\nCurrent page context preview (${pageText.length} chars):\n${pageText.slice(0, 2500)}\n\nHistory:\n${recentHistory || "none"}\n\nPrevious tool results:\n${toolContext || "none"}`
+      }
+    ]
+  });
+
+  const decision = parseJsonObject(content);
+  const tool = decision?.tool;
+  if (!["SCRAPE_PAGE", "GET_HEADINGS", "SCRAPE_SECTION", "FIND_TEXT"].includes(tool)) {
+    return { tool: "NONE" };
+  }
+  return { tool, query: typeof decision.query === "string" ? decision.query : question };
+}
+
+export async function getAnswer(pageText, question, languageCode, history = []) {
+  if (!pageText || pageText.trim().length < MIN_PAGE_TEXT_LENGTH) {
+    return "I couldn't extract enough readable text from this page yet. Try refreshing the page, opening a regular article/product page, or asking again after the page finishes loading.";
+  }
+
+  const truncatedPageText = pageText.slice(0, MAX_PAGE_TEXT_LENGTH);
+  const { sentences, maxTokens } = responseBudgetFor(truncatedPageText.length);
+  const recentHistory = history.slice(-MAX_HISTORY_TURNS);
+  const historyMessages = recentHistory.flatMap(({ question, answer }) => [
+    { role: "user", content: question },
+    { role: "assistant", content: answer }
+  ]);
+
+  return chatCompletion({
+    maxTokens,
+    messages: [
+      {
+        role: "system",
+        content: `You are SaarthiX, a concise voice assistant for webpages. Use only the supplied page content and tool results as your context. Answer in ${sentences}. If the context does not contain the answer, say so instead of guessing. Never say you do not have scraping tools; the extension already supplied scraped context/tool results. Respond in ${languageCode || "the same language as the question"}.\n\nPage context and tool results:\n${truncatedPageText}`
+      },
+      ...historyMessages,
+      { role: "user", content: question }
+    ]
+  });
 }

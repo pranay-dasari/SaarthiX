@@ -63,9 +63,12 @@ edits also need a page refresh).
 
 ## Status
 
-MVP scaffold: mic button + page text extraction + STT → Sarvam-M → TTS round trip wired
-through the background service worker. Sarvam API endpoint paths in `src/background.js`
-are best-guess placeholders — verify against current Sarvam docs before relying on them.
+Current MVP voice-agent flow: mic button + page text extraction + STT → agentic
+page-tool loop → Sarvam-30B webpage answer → Bulbul TTS round trip wired through
+the background service worker. The agent can ask the content script for extra
+read-only page context via tools like `SCRAPE_PAGE`, `GET_HEADINGS`,
+`SCRAPE_SECTION`, and `FIND_TEXT`. The background worker also keeps short per-tab
+conversation history for follow-up questions on the same page.
 
 Form-filling (voice-driven form interview) is a stretch goal, built only once the
 summarizer works reliably across multiple real pages and languages.
