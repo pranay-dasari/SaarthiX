@@ -59,8 +59,17 @@ function sendVoiceQuery(payload) {
   });
 }
 
+let pageTextCache = null;
+const pageToolCache = new Map();
+const PAGE_TEXT_CACHE_TTL_MS = 30000;
+const PAGE_TOOL_CACHE_TTL_MS = 60000;
+
 function fallbackPageText() {
   return (document.body?.innerText || "").replace(/\s+/g, " ").trim().slice(0, 20000);
+}
+
+function pageCacheKey() {
+  return [window.location.href, document.title, document.body?.innerText?.length || 0].join("|");
 }
 
 function normalizeText(text) {
@@ -114,7 +123,18 @@ function findText(query) {
     .join("\n\n");
 }
 
-function getPageTextForAgent() {
+function getPageTextForAgent({ force = false } = {}) {
+  const key = pageCacheKey();
+  const now = Date.now();
+  if (!force && pageTextCache && pageTextCache.key === key && now - pageTextCache.at < PAGE_TEXT_CACHE_TTL_MS) {
+    console.log("SaarthiX: using cached page scrape", {
+      finalChars: pageTextCache.text.length,
+      ageMs: now - pageTextCache.at
+    });
+    return pageTextCache.text;
+  }
+
+  const startedAt = performance.now();
   const scrapedText = typeof extractPageText === "function" ? extractPageText() : "";
   const fallbackText = scrapedText.trim().length >= 40 ? "" : fallbackPageText();
   const bodyText = scrapedText.trim().length >= 40 ? scrapedText : fallbackText;
@@ -126,11 +146,14 @@ function getPageTextForAgent() {
     bodyText
   ].join("\n").trim();
 
+  pageTextCache = { key, text: pageText, at: now };
+
   console.log("SaarthiX: scraper result", {
     scraperAvailable: typeof extractPageText === "function",
     scrapedChars: scrapedText.length,
     fallbackChars: fallbackText.length,
     finalChars: pageText.length,
+    durationMs: Math.round(performance.now() - startedAt),
     preview: pageText.slice(0, 300)
   });
 
@@ -138,18 +161,33 @@ function getPageTextForAgent() {
 }
 
 function runPageTool(call) {
+  const cacheKey = `${pageCacheKey()}|${call.tool}|${call.query || ""}`;
+  const cached = pageToolCache.get(cacheKey);
+  if (cached && Date.now() - cached.at < PAGE_TOOL_CACHE_TTL_MS) {
+    console.log("SaarthiX: using cached page tool result", { tool: call.tool, query: call.query });
+    return cached.text;
+  }
+
+  let text;
   switch (call.tool) {
     case "SCRAPE_PAGE":
-      return getPageTextForAgent();
+      text = getPageTextForAgent({ force: true });
+      break;
     case "GET_HEADINGS":
-      return getHeadings() || "No headings found.";
+      text = getHeadings() || "No headings found.";
+      break;
     case "SCRAPE_SECTION":
-      return scrapeSection(call.query || "") || `No matching section found for: ${call.query || ""}`;
+      text = scrapeSection(call.query || "") || `No matching section found for: ${call.query || ""}`;
+      break;
     case "FIND_TEXT":
-      return findText(call.query || "") || `No matching text found for: ${call.query || ""}`;
+      text = findText(call.query || "") || `No matching text found for: ${call.query || ""}`;
+      break;
     default:
       throw new Error(`Unknown page tool: ${call.tool}`);
   }
+
+  pageToolCache.set(cacheKey, { text, at: Date.now() });
+  return text;
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -187,8 +225,10 @@ async function recordAndSend(button) {
         console.log("SaarthiX: recording stopped");
 
         const blob = new Blob(chunks, { type: "audio/webm" });
-        const audioBase64 = await blobToBase64(blob);
-        const pageText = getPageTextForAgent();
+        const [audioBase64, pageText] = await Promise.all([
+          blobToBase64(blob),
+          Promise.resolve().then(() => getPageTextForAgent())
+        ]);
         console.log("SaarthiX: sending voice + page text", {
           audioBytes: blob.size,
           pageTextChars: pageText.length
@@ -232,3 +272,18 @@ async function recordAndSend(button) {
 console.log("SaarthiX: content script loaded", { url: window.location.href });
 const micButton = createMicButton();
 micButton.addEventListener("click", () => recordAndSend(micButton));
+
+// Pre-warm the page-text cache during idle time so the first voice request is faster.
+const warmPageCache = () => {
+  try {
+    getPageTextForAgent();
+  } catch (err) {
+    console.warn("SaarthiX: page scrape pre-warm failed", err.message);
+  }
+};
+
+if ("requestIdleCallback" in window) {
+  window.requestIdleCallback(warmPageCache, { timeout: 3000 });
+} else {
+  setTimeout(warmPageCache, 1500);
+}

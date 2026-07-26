@@ -8,6 +8,7 @@ import { synthesizeSpeech } from "./tts.js";
 
 const MAX_STORED_HISTORY_TURNS = 10;
 const MAX_TOOL_CALLS = 2;
+const LLM_TOOL_ROUTER_MIN_CONTEXT_CHARS = 800;
 
 function historyKey(tabId) {
   return `conversation_${tabId}`;
@@ -42,12 +43,49 @@ function executePageTool(tabId, call) {
   });
 }
 
+function heuristicPageTool(question, pageText, toolResults) {
+  const q = question.toLowerCase();
+
+  if (/\b(headings?|sections?|outline|table of contents)\b/.test(q)) {
+    return { tool: "GET_HEADINGS" };
+  }
+
+  const sectionMatch = q.match(/(?:section|part|about|on|for|regarding)\s+([a-z0-9][a-z0-9\s-]{2,40})/i);
+  if (sectionMatch) {
+    return { tool: "SCRAPE_SECTION", query: sectionMatch[1].trim() };
+  }
+
+  const topicMatch = q.match(/\b(pricing|price|cost|eligibility|requirements?|setup|installation|install|features?|benefits?|limitations?|refund|privacy|security|contact|address|deadline|dates?|steps?)\b/i);
+  if (topicMatch && !toolResults.some((result) => result.query?.toLowerCase().includes(topicMatch[1].toLowerCase()))) {
+    return { tool: "SCRAPE_SECTION", query: topicMatch[1] };
+  }
+
+  if (pageText.length < LLM_TOOL_ROUTER_MIN_CONTEXT_CHARS && !toolResults.some((result) => result.tool === "SCRAPE_PAGE")) {
+    return { tool: "SCRAPE_PAGE" };
+  }
+
+  return { tool: "NONE" };
+}
+
+async function selectPageTool(tabId, transcript, enrichedText, history, toolResults) {
+  const heuristicCall = heuristicPageTool(transcript, enrichedText, toolResults);
+  if (heuristicCall.tool !== "NONE") return heuristicCall;
+
+  // Fast path: if we already have decent context and no obvious section/topic request,
+  // skip the extra LLM router call and answer directly.
+  if (enrichedText.length >= LLM_TOOL_ROUTER_MIN_CONTEXT_CHARS || tabId == null) {
+    return { tool: "NONE" };
+  }
+
+  return choosePageTool(transcript, enrichedText, history, toolResults);
+}
+
 async function enrichPageContext(tabId, transcript, pageText, history) {
   let enrichedText = pageText;
   const toolResults = [];
 
   for (let i = 0; i < MAX_TOOL_CALLS; i += 1) {
-    const call = await choosePageTool(transcript, enrichedText, history, toolResults);
+    const call = await selectPageTool(tabId, transcript, enrichedText, history, toolResults);
     if (!call || call.tool === "NONE") break;
 
     console.log("SaarthiX Agent: executing page tool", call);
@@ -72,15 +110,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     try {
       const tabId = sender.tab?.id;
       const pageText = message.pageText || "";
-      const history = tabId != null ? await loadHistory(tabId, pageText) : [];
+      const historyPromise = tabId != null ? loadHistory(tabId, pageText) : Promise.resolve([]);
+      const sttPromise = transcribeAudio(message.audioBase64);
+      const [history, { transcript, languageCode }] = await Promise.all([historyPromise, sttPromise]);
 
       console.log("SaarthiX Agent: received voice query", {
         audioChars: message.audioBase64?.length || 0,
         pageTextChars: pageText.length,
-        historyTurns: history.length
+        historyTurns: history.length,
+        transcript
       });
 
-      const { transcript, languageCode } = await transcribeAudio(message.audioBase64);
       const { enrichedText, toolResults } = await enrichPageContext(tabId, transcript, pageText, history);
       const answerText = await getAnswer(enrichedText, transcript, languageCode, history);
       const audioBase64 = await synthesizeSpeech(answerText, languageCode);
